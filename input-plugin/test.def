@@ -1,0 +1,14 @@
+LIBRARY zinc-input-test
+EXPORTS
+  ZN_JammaOpen
+  ZN_JammaClose
+  ZN_JammaRead
+  ZT_Key
+  ZT_Reset
+  ZT_AddXPad
+  ZT_AddJPad
+  ZT_X
+  ZT_JBtn
+  ZT_JAxis
+  ZT_JPov
+  ZT_Time

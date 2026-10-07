@@ -1,0 +1,6 @@
+LIBRARY zinc-input
+EXPORTS
+  ZN_JammaOpen
+  ZN_JammaClose
+  ZN_JammaRead
+  ZN_InputPoll

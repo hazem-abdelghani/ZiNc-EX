@@ -1,0 +1,18 @@
+LIBRARY renderer
+EXPORTS
+  ZN_GPUinit
+  ZN_GPUshutdown
+  ZN_GPUopen
+  ZN_GPUclose
+  ZN_GPUreadStatus
+  ZN_GPUwriteStatus
+  ZN_GPUreadData
+  ZN_GPUwriteData
+  ZN_GPUdmaChain
+  ZN_GPUdmaSliceIn
+  ZN_GPUdmaSliceOut
+  ZN_GPUupdateLace
+  ZN_GPUsetMode
+  ZN_GPUgetMode
+  ZN_GPUmakeSnapshot
+  ZN_GPUfreeze

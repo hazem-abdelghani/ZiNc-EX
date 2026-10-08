@@ -75,7 +75,7 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 - *File > Backup Settings / Restore Settings*: one zip with the settings, controls, profiles, per-game settings and the ZiNc saves (`cfg` folder).
   A restore first saves the current files as `ZiNc-EX-before-restore.zip`.
 - *Help > Keyboard Shortcuts* lists the keys of the launcher and of the games. Column widths and the splitter are remembered.
-- *Dark Theme* (General tab, experimental, applied at the next start).
+- *Dark Theme* (General tab, applied at the next start).
 
 **Settings Layout.** By default the tabs (General, Video, Audio, Controls, Combos) are in a window of their own, so the game list has the whole main window; open it with the Settings button of the toolbar, *Options > Settings…* or F9 (*Options* also has Video, Audio, Controls and Combos Settings, which open that tab). *Classic Layout* (a check box on the General tab, applied with OK; also in the View menu) puts the tabs on the right of the game list instead. The choice and the position of the settings window are remembered.
 

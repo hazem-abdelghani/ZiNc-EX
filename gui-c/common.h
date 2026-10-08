@@ -70,6 +70,7 @@ const GameCfg *gamecfg_find(int id);            /* NULL when the game has no set
 int gamecfg_active(const GameCfg *c);
 void gamecfg_set(const GameCfg *c);
 void gamecfg_remove(int id);
+int gamecfg_rename_profile(const wchar_t *from, const wchar_t *to);   /* the games that use the controls profile "from" use "to"; returns how many */
 int ui_mode_count(void);                        /* main.c: the screen modes of the Video tab */
 void ui_mode_get(int i, int *w, int *h);
 
@@ -199,6 +200,7 @@ void profile_clean_name(wchar_t *name);
 int profile_names(wchar_t names[][64], int max);   /* sorted */
 char *profile_load(const wchar_t *name);            /* malloc'ed text or NULL */
 int profile_save(const wchar_t *name, const char *text);
+int profile_rename(const wchar_t *from, const wchar_t *to);   /* 0 when it fails (the name is taken...) */
 int profile_delete(const wchar_t *name);
 void combos_apply_loadout(const char *charName);
 void combos_defaults(void);
@@ -295,7 +297,7 @@ void roms_dir_abs(wchar_t *out, size_t cap);        /* main.c: the ROMs folder a
 /* pages of the right pane (controls.c / combos.c) */
 typedef struct {
     HWND page;
-    HWND lProf, cbProf, bPSave, bPDel, chEnh, lP1, lP2, cbP1, cbP2, lDead, eDead, lv, bKey, bX, bJ, bClear, bDef, lPads, bDetect;
+    HWND lProf, cbProf, bPUpd, bPSave, bPRen, bPDel, chEnh, lP1, lP2, cbP1, cbP2, lDead, eDead, lv, bKey, bX, bJ, bClear, bDef, lPads, bDetect;
     int analog;
 } CtlUI;
 extern CtlUI g_ctl;
@@ -349,7 +351,7 @@ enum {
     ID_C_DEF, ID_C_DETECT,
     /* combos page */
     ID_K_STEP = 410, ID_K_CHG, ID_K_LOADCHAR, ID_K_LV, ID_K_CHAR, ID_K_MOVE, ID_K_SEQ, ID_K_PLAY, ID_K_FACE, ID_K_CLEAR, ID_K_DEF,
-    ID_C_PROF = 430, ID_C_PSAVE, ID_C_PDEL,
+    ID_C_PROF = 430, ID_C_PSAVE, ID_C_PDEL, ID_C_PUPD, ID_C_PREN,
     ID_F_MAKER = 440, ID_F_GENRE, ID_F_REGION, ID_RESETSORT,
     ID_K_TOK = 470,   /* ... + CMB_NTOK - 1: the sequence buttons */
     ID_K_LEGEND = 510, ID_K_CREDIT

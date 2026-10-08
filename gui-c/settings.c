@@ -44,6 +44,7 @@ void settings_defaults(Settings *s, const Settings *keep) {
     n.enhanced = n.xinputOn = n.dinputOn = n.analog = 1;
     n.deadzone = 50;
     n.logs = 0;
+    wcscpy(n.trainer, L"trainer\\ZiNc 1.1 Trainer.exe");   /* the usual place of the trainer, beside the launcher (a relative path is taken from the launcher folder) */
     n.sortCol = 1; n.sortAsc = 1;
     n.colsHidden = 8 | 64;   /* Info and Year are hidden by default */
     n.hideSearch = n.hideFilters = 1;   /* the search bar and the filter bar are off by default */

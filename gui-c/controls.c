@@ -9,6 +9,8 @@ static int pad_index(int p) { return p < 0 ? 1 : p == 0 ? 0 : p + 1; }
 static int pad_value(int i) { return i == 0 ? 0 : i == 1 ? -1 : i - 1; }
 
 static void profiles_fill(const wchar_t *select);
+static char *g_profBase;   /* the controls as they were when the chosen profile was loaded or saved: Save is only for changes */
+static void profile_buttons(void);
 
 static void dash_text(const char *s, wchar_t *out, int cap) { if (!s[0]) wcscpy(out, L"-"); else wide_from_ascii(s, out, cap); }
 
@@ -32,7 +34,9 @@ void ctl_create(HWND page, HWND tip) {
     c->eDead = mk(page, L"EDIT", L"", ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, ID_C_DEAD); T(c->eDead, L"Stick Threshold %");
     c->lProf = mk(page, L"STATIC", L"Profile", SS_LEFT, 0, 0); T(c->lProf, L"Profile");
     c->cbProf = mk(page, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, ID_C_PROF); T(c->cbProf, L"Profile");
+    c->bPUpd = mk(page, L"BUTTON", L"Save", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_C_PUPD); T(c->bPUpd, L"Save Profile");
     c->bPSave = mk(page, L"BUTTON", L"Save As…", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_C_PSAVE); T(c->bPSave, L"Save As…");
+    c->bPRen = mk(page, L"BUTTON", L"Rename…", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_C_PREN); T(c->bPRen, L"Rename Profile");
     c->bPDel = mk(page, L"BUTTON", L"Delete", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_C_PDEL); T(c->bPDel, L"Delete Profile");
     c->lv = lv_create(page, ID_C_LV, cols, widths, 5);
     lv_set_widths(c->lv, g_set.colsCtl, 5);
@@ -73,11 +77,13 @@ void ctl_layout(int w, int h) {
     place(c->eDead, x + lw, y, S(70), rh);
     y += S(32);
     {   /* profiles: pick one to load it, Save As keeps the current layout under a name, Delete removes the chosen one */
-        int pl = text_width(c->page, L"Profile") + S(10), bw2 = S(84), dw = S(66);
-        int cbw = W - pl - bw2 - dw - 2 * S(8);
+        int pl = text_width(c->page, L"Profile") + S(10), uw = S(56), bw2 = S(84), rw = S(80), dw = S(66), g = S(6);
+        int cbw = W - pl - uw - bw2 - rw - dw - 4 * g - S(2);
         place(c->lProf, x, y + S(4), pl, S(18));
         place(c->cbProf, x + pl, y, cbw, S(220));
-        place(c->bPSave, x + W - bw2 - S(8) - dw, y - 1, bw2, bh);
+        place(c->bPUpd, x + pl + cbw + g, y - 1, uw, bh);
+        place(c->bPSave, x + pl + cbw + g + uw + g, y - 1, bw2, bh);
+        place(c->bPRen, x + W - dw - g - rw, y - 1, rw, bh);
         place(c->bPDel, x + W - dw, y - 1, dw, bh);
     }
     y += S(32);
@@ -114,6 +120,7 @@ void ctl_refresh_rows(void) {
         }
     }
     InvalidateRect(c->lv, NULL, TRUE);
+    profile_buttons();
 }
 
 static void refresh_pads(void) {
@@ -153,6 +160,33 @@ void ctl_collect(void) {
 static wchar_t g_pnames[64][64];
 static int g_np;
 
+/* the layout of the tab as profile text (the pads and the threshold are read from their boxes first) */
+static char *current_profile_text(void) {
+    CtlUI *c = &g_ctl;
+    Buf b = {0};
+    g_set.deadzone = edit_int(c->eDead, 5, 95);
+    g_set.pad1 = pad_value((int)SendMessageW(c->cbP1, CB_GETCURSEL, 0, 0));
+    g_set.pad2 = pad_value((int)SendMessageW(c->cbP2, CB_GETCURSEL, 0, 0));
+    input_profile_text(&b);
+    return b.s;
+}
+
+static void profile_base_set(void) { free(g_profBase); g_profBase = current_profile_text(); }
+
+/* Rename and Delete need a chosen profile; Save also needs a change of the controls since the profile was loaded or saved */
+static void profile_buttons(void) {
+    CtlUI *c = &g_ctl;
+    int chosen = c->cbProf && (int)SendMessageW(c->cbProf, CB_GETCURSEL, 0, 0) > 0, dirty = 0;
+    if (chosen && g_profBase) {
+        char *now = current_profile_text();
+        dirty = now && strcmp(now, g_profBase) != 0;
+        free(now);
+    }
+    EnableWindow(c->bPUpd, dirty);
+    EnableWindow(c->bPRen, chosen);
+    EnableWindow(c->bPDel, chosen);
+}
+
 static void profiles_fill(const wchar_t *select) {
     CtlUI *c = &g_ctl;
     int i, sel = 0;
@@ -164,7 +198,8 @@ static void profiles_fill(const wchar_t *select) {
         if (select && !_wcsicmp(select, g_pnames[i])) sel = i + 1;
     }
     SendMessageW(c->cbProf, CB_SETCURSEL, sel, 0);
-    EnableWindow(c->bPDel, sel > 0);
+    if (sel == 0) { free(g_profBase); g_profBase = NULL; }
+    profile_buttons();
 }
 
 /* the pad choice and the threshold of a loaded profile */
@@ -178,7 +213,6 @@ static void pads_to_widgets(void) {
 static void profile_selected(void) {
     CtlUI *c = &g_ctl;
     int i = (int)SendMessageW(c->cbProf, CB_GETCURSEL, 0, 0);
-    EnableWindow(c->bPDel, i > 0);
     if (i > 0 && i <= g_np) {
         char *text = profile_load(g_pnames[i - 1]);
         if (!text) { msg_box(g_main, L"Profile", L"The profile file could not be read.", MB_ICONWARNING, NULL); return; }
@@ -186,7 +220,9 @@ static void profile_selected(void) {
         free(text);
         pads_to_widgets();
         ctl_refresh_rows();
-    }
+        profile_base_set();
+    } else { free(g_profBase); g_profBase = NULL; }
+    profile_buttons();
 }
 
 static void profile_save_as(void) {
@@ -208,6 +244,41 @@ static void profile_save_as(void) {
     input_profile_text(&b);
     if (!profile_save(name, b.s)) msg_box(g_main, L"Save Controls Profile", L"The profile could not be saved (is the ZiNc folder writable?).", MB_ICONWARNING, NULL);
     buf_free(&b);
+    profile_base_set();
+    profiles_fill(name);
+}
+
+/* Save: the layout of this tab goes into the chosen profile (no question: that is what the button is for) */
+static void profile_update(void) {
+    CtlUI *c = &g_ctl;
+    int cur = (int)SendMessageW(c->cbProf, CB_GETCURSEL, 0, 0);
+    Buf b = {0};
+    if (cur < 1 || cur > g_np) return;
+    ctl_collect();
+    input_profile_text(&b);
+    if (!profile_save(g_pnames[cur - 1], b.s)) msg_box(g_main, L"Save Controls Profile", L"The profile could not be saved (is the ZiNc folder writable?).", MB_ICONWARNING, NULL);
+    buf_free(&b);
+    profile_base_set();
+    profile_buttons();
+}
+
+/* Rename: the file gets the new name, the games that use the profile follow it */
+static void profile_rename_ask(void) {
+    CtlUI *c = &g_ctl;
+    int cur = (int)SendMessageW(c->cbProf, CB_GETCURSEL, 0, 0), i;
+    wchar_t old[64], name[64];
+    if (cur < 1 || cur > g_np) return;
+    wcscpy(old, g_pnames[cur - 1]);
+    wcscpy(name, old);
+    if (!dlg_text(g_main, L"Rename Controls Profile", L"New name of the profile:", name, 64)) return;
+    profile_clean_name(name);
+    if (!name[0] || !wcscmp(name, old)) return;
+    if (_wcsicmp(name, old)) for (i = 0; i < g_np; i++) if (!_wcsicmp(name, g_pnames[i])) {
+        msg_box(g_main, L"Rename Controls Profile", L"A profile with this name exists already. Choose another name.", MB_ICONWARNING, NULL);
+        return;
+    }
+    if (!profile_rename(old, name)) { msg_box(g_main, L"Rename Controls Profile", L"The profile could not be renamed (is the ZiNc folder writable?).", MB_ICONWARNING, NULL); return; }
+    gamecfg_rename_profile(old, name);
     profiles_fill(name);
 }
 
@@ -294,6 +365,8 @@ void ctl_reset_ask(HWND owner) {
 int ctl_command(int id, int code) {
     RoleRow *r;
     if (id == ID_C_PROF) { if (code == CBN_SELCHANGE) profile_selected(); return 1; }
+    if ((id == ID_C_P1 || id == ID_C_P2) && code == CBN_SELCHANGE) { profile_buttons(); return 0; }   /* a pad choice or the threshold is part of the profile: Save may be needed */
+    if (id == ID_C_DEAD && code == EN_CHANGE) { profile_buttons(); return 0; }
     if (code != BN_CLICKED && id != ID_C_DEAD) return 0;
     switch (id) {
     case ID_C_KEY: if ((r = selected_row())) set_key(r); return 1;
@@ -301,7 +374,9 @@ int ctl_command(int id, int code) {
     case ID_C_JB: if ((r = selected_row())) set_j(r); return 1;
     case ID_C_CLEAR: if ((r = selected_row())) { r->key[0] = r->x[0] = r->j[0] = 0; ctl_refresh_rows(); } return 1;
     case ID_C_DEF: ctl_reset_ask(g_main); return 1;
+    case ID_C_PUPD: profile_update(); return 1;
     case ID_C_PSAVE: profile_save_as(); return 1;
+    case ID_C_PREN: profile_rename_ask(); return 1;
     case ID_C_PDEL: profile_delete_ask(); return 1;
     case ID_C_DETECT: refresh_pads(); return 1;
     }

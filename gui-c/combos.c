@@ -753,7 +753,13 @@ static void token_click(int i) {
     DWORD s0 = 0, s1 = 0;
     size_t n, nb, caret;
     const wchar_t *a;
-    if (!cur_slot()) { ListView_SetItemState(u->lv, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED); if (!cur_slot()) return; }
+    if (!cur_slot()) {   /* no row chosen: the first row without a sequence (the first row when all are used) */
+        int r, pick = 0;
+        for (r = 0; r < g_rows; r++) if (!g_in.slots[r].seq[0]) { pick = r; break; }
+        ListView_SetItemState(u->lv, pick, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_EnsureVisible(u->lv, pick, FALSE);
+        if (!cur_slot()) return;
+    }
     GetWindowTextW(u->eSeq, t, 400);
     n = wcslen(t);
     SendMessageW(u->eSeq, EM_GETSEL, (WPARAM)&s0, (LPARAM)&s1);
@@ -877,7 +883,7 @@ int cmb_command(int id, int code) {
     if (id == ID_K_DEF && code == BN_CLICKED) {
         int r = 0;
         msg_box(g_main, L"Combo Defaults", L"Restore the combos to their defaults?\n\nAll rows, triggers and the step / charge times of the Combos tab go back to the start values. Other tabs are not touched.", MB_YESNO | MB_ICONQUESTION, &r);
-        if (r == IDYES) { combos_defaults(); cmb_load(); ListView_SetItemState(u->lv, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED); fill_form(); }
+        if (r == IDYES) { combos_defaults(); cmb_load(); ListView_SetItemState(u->lv, -1, 0, LVIS_SELECTED | LVIS_FOCUSED); fill_form(); }   /* no row chosen: the sequence buttons then use the first empty row */
         return 1;
     }
     if (id == ID_K_CLEAR && code == BN_CLICKED) {

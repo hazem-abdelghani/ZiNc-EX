@@ -9,9 +9,13 @@ ZiNc EX by Hazem Abdelghani – <https://github.com/hazem-abdelghani/ZiNc-EX>
 
 ## Installation
 
-1. Copy `ZiNc-EX.exe` (64-bit) or `ZiNc-EX-32bit.exe` into the folder that holds `ZiNc.exe`.
-2. Run it and, on first start, set the **ROMs folder** on the *General* tab.
+The release zip already includes `ZiNc.exe` (ZiNc 1.1) and the ZiNc 1.1 Trainer (in the `trainer` folder), so nothing else has to be downloaded.
+
+1. Unpack the release zip into a folder of your choice. It holds `ZiNc.exe` together with `ZiNc-EX.exe` (64-bit), `ZiNc-EX-32bit.exe` and the `trainer` folder (`trainer\ZiNc 1.1 Trainer.exe`, the launcher's default trainer program: tick *Start Trainer With Games* or use *Play With Trainer* to use it).
+2. Run `ZiNc-EX.exe` (or `ZiNc-EX-32bit.exe`) and, on first start, set the **ROMs folder** on the *General* tab.
 3. Pick a game and press **Play** (or double-click the game).
+
+Already have ZiNc? Copy `ZiNc-EX.exe` (64-bit) or `ZiNc-EX-32bit.exe` into the folder that holds your `ZiNc.exe` instead.
 
 The launcher creates its own files next to itself: `zinc-settings.cfg` (all launcher settings), `zinc-games.cfg` (per-game settings),
 `renderer.cfg`, `zinc-input.cfg`, the `renderers/`, `profiles/` and `game-settings/` folders. Delete them to start from scratch.
@@ -45,7 +49,7 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 - Remappable input plugin (`zinc-input.znc`) with keyboard, XInput and DirectInput bindings,
   analogue-stick-as-d-pad, per-button **autofire**, two pads, and ready-made defaults.
 - Controls and Combos: a right click on a Keyboard / XInput / DirectInput cell opens a menu with *Set...* and *Clear*; the key window has Delete (or a right click menu with Clear), the XInput / DirectInput windows an *Unbind* button. Direction rows have D-pad / hat bindings of their own (editable, kept when *Pad Directions* is switched off); with *Pad Directions* on, the left stick and the other hat / axes work as well.
-- *Combos* tab: macros for Street Fighter EX2 Plus (its own *Defaults* button resets just this tab; 20 rows are always listed); moves are shown and typed in short words (`QCF + HP`, `D, DR, R + HP`, `~` = a short wait of one Step (30 ms by default); `Hold L` = hold a direction for the Charge time; the long names such as "Heavy Punch" work too; L / R follow the "Player Side" setting (Left = the character is on the left and looks right)) or built with the picture buttons under the Sequence box (each button writes at the caret of the Sequence text, or over the selected text; the *Legend* button explains every short name); `BN1` ... `BN6` are the Button 1 ... 6 of the Controls tab (LP MP HP LK MK HK are the same buttons), `START` the Start button. The config file keeps the short numpad notation. A double click on a combo's name renames it. Charge moves (Guile, Blanka ...) wait for their charge time (*Charge (ms)*, default 600 ms; raise it if a charge move does not come out); the check box *Count The Charge You Already Hold* (off by default) shortens that wait by the time you already hold down-back when you press the trigger.
+- *Combos* tab: macros for Street Fighter EX2 Plus (its own *Defaults* button resets just this tab; 20 rows are always listed); moves are shown and typed in short words (`QCF + HP`, `D, DR, R + HP`, `~` = a short wait of one Step (30 ms by default); `Hold L` = hold a direction for the Charge time; the long names such as "Heavy Punch" work too; L / R follow the "Player Side" setting (Left = the character is on the left and looks right)) or built with the picture buttons under the Sequence box (each button writes at the caret of the Sequence text, or over the selected text; with no row chosen the first empty row is used; the *Legend* button explains every short name); `BN1` ... `BN6` are the Button 1 ... 6 of the Controls tab (LP MP HP LK MK HK are the same buttons), `START` the Start button. The config file keeps the short numpad notation. A double click on a combo's name renames it. Charge moves (Guile, Blanka ...) wait for their charge time (*Charge (ms)*, default 600 ms; raise it if a charge move does not come out); the check box *Count The Charge You Already Hold* (off by default) shortens that wait by the time you already hold down-back when you press the trigger.
 
 **Per Game and Play Options**
 - *Game > Game Settings*: a game can have its own renderer, rotation, window / fullscreen, resolution, Direct3D 11 scale and
@@ -56,17 +60,17 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 - *Check ROM Set*: looks at the zip files of the game, its parent set and the BIOS and says which are missing or damaged
   (the zip directory and the checksum of every file are verified). It cannot see which file *inside* a set is missing.
 - Filters by **region**, **maker** and **genre** above the list (remembered for the next start; *Reset Filters* sets them and the list order back). The region (US, JP, ASIA, WORLD) is read from the words between ( ) in the game name, *Other* when none says it; maker and genre are guessed from the name and BIOS.
-- *Play With Trainer* (right-click menu and Game menu) starts the game together with the trainer program set on the General tab, for example the ZiNc 1.1 Trainer. *Start Trainer With Games* (General tab) or *Game Settings > Start Trainer* start it with every / one game; it is closed when the game ends.
+- *Play With Trainer* (right-click menu and Game menu) starts the game together with the trainer program set on the General tab (by default `trainer\ZiNc 1.1 Trainer.exe`, next to the launcher), for example the ZiNc 1.1 Trainer. *Start Trainer With Games* (General tab) or *Game Settings > Start Trainer* start it with every / one game; it is closed when the game ends.
 
 **Controls and Mouse**
-- *Controls* has **profiles**: save the layout under a name (arcade stick, pad, keyboard ...), pick one in the list to load it,
-  choose it and press *Delete* to remove it.
+- *Controls* has **profiles**: save the layout under a name (arcade stick, pad, keyboard ...) with *Save As*, pick one in the list to load it,
+  then *Save* writes the current layout into the chosen profile (it is greyed out while there is nothing to save), *Rename* gives it another name (the games that use it follow) and *Delete* removes it.
 - The mouse cursor is shown in the game window and hidden after 3 seconds without movement (it comes back when the mouse moves). This is done by the input plugin (`cursor_hide_ms` in `zinc-input.cfg`: 0 = never hide, -1 = leave the cursor alone).
 - *File > Open Screenshots Folder* opens the SNAP folder next to ZiNc.exe. The Direct3D 11 renderer saves F5 screenshots like the
   OpenGL and Direct3D renderers do, as `SNAP\<ROM set>\ZND11001.bmp`, `ZND11002.bmp` ...
 
 **Settings, Backup, Help**
-- *OK* saves the settings (and closes the settings window when it is a window of its own), *Cancel* drops the changes; *Restore Defaults* (bottom left of the settings) restores the video, audio and system settings
+- *OK* saves the settings (and closes the settings window when it is a window of its own), *Cancel* drops the changes (so does closing the settings window or the program with the X of the title bar: nothing is saved that was not confirmed with *OK*); *Restore Defaults* (bottom left of the settings) restores the video, audio and system settings
   (the Controls and Combos tabs, the ROM folder, the trainer program and favorites are kept; *Dark Theme* and *Start Trainer With Games* go back to off) and saves it immediately.
 - *File > Backup Settings / Restore Settings*: one zip with the settings, controls, profiles, per-game settings and the ZiNc saves (`cfg` folder).
   A restore first saves the current files as `ZiNc-EX-before-restore.zip`.

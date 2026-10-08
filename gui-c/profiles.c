@@ -57,6 +57,14 @@ int profile_save(const wchar_t *name, const char *text) {
     return write_file(p, text, strlen(text));
 }
 
+/* renames the file of a profile; 0 when the new name is taken or the file cannot be moved */
+int profile_rename(const wchar_t *from, const wchar_t *to) {
+    wchar_t a[600], b[600];
+    file_path(from, a, 600);
+    file_path(to, b, 600);
+    return MoveFileExW(a, b, 0);
+}
+
 int profile_delete(const wchar_t *name) {
     wchar_t p[600];
     file_path(name, p, 600);

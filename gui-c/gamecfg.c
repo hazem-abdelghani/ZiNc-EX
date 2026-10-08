@@ -34,6 +34,13 @@ static GameCfg *gc_slot(int id) {
 
 void gamecfg_set(const GameCfg *c) { *gc_slot(c->id) = *c; }
 
+int gamecfg_rename_profile(const wchar_t *from, const wchar_t *to) {
+    int i, n = 0;
+    for (i = 0; i < g_ngc; i++) if (g_gc[i].profile[0] && !_wcsicmp(g_gc[i].profile, from)) { wcsncpy(g_gc[i].profile, to, 63); g_gc[i].profile[63] = 0; n++; }
+    if (n) gamecfg_save();
+    return n;
+}
+
 void gamecfg_remove(int id) {
     int i;
     for (i = 0; i < g_ngc; i++) if (g_gc[i].id == id) { memmove(&g_gc[i], &g_gc[i + 1], (size_t)(g_ngc - i - 1) * sizeof(GameCfg)); g_ngc--; return; }

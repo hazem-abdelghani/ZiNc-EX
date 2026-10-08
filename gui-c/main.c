@@ -434,6 +434,26 @@ static void roms_refresh(void) {
 static int playable(const Game *g) { return g && !g_running && rom_available(g); }
 static void gather(KVMap *m);
 
+/* the settings of the tabs as they were last saved / applied: the X of a window and Cancel put them back (ui_sig() reads the widgets into g_set all the time, so g_set alone cannot tell) */
+static struct { wchar_t renderer[64], roms[520], trainer[520], bezel[520]; int rotate, useSound, soundFilter, surround, exciter, slowGeometry, hideConsole, onStart, logs, cutoff, surroundMul, trainerOn, ok; } g_snap;
+static void snap_take(void) {
+    wcsncpy(g_snap.renderer, g_set.renderer, 63); g_snap.renderer[63] = 0;
+    wcsncpy(g_snap.roms, g_set.roms, 519); g_snap.roms[519] = 0;
+    wcsncpy(g_snap.trainer, g_set.trainer, 519); g_snap.trainer[519] = 0;
+    wcsncpy(g_snap.bezel, g_bezelPath, 519); g_snap.bezel[519] = 0;
+    g_snap.rotate = g_set.rotate; g_snap.useSound = g_set.useSound; g_snap.soundFilter = g_set.soundFilter; g_snap.surround = g_set.surround;
+    g_snap.exciter = g_set.exciter; g_snap.slowGeometry = g_set.slowGeometry; g_snap.hideConsole = g_set.hideConsole; g_snap.onStart = g_set.onStart;
+    g_snap.logs = g_set.logs; g_snap.cutoff = g_set.cutoff; g_snap.surroundMul = g_set.surroundMul; g_snap.trainerOn = g_set.trainerOn;
+    g_snap.ok = 1;
+}
+static void snap_restore(void) {
+    if (!g_snap.ok) return;
+    wcscpy(g_set.renderer, g_snap.renderer); wcscpy(g_set.roms, g_snap.roms); wcscpy(g_set.trainer, g_snap.trainer); wcscpy(g_bezelPath, g_snap.bezel);
+    g_set.rotate = g_snap.rotate; g_set.useSound = g_snap.useSound; g_set.soundFilter = g_snap.soundFilter; g_set.surround = g_snap.surround;
+    g_set.exciter = g_snap.exciter; g_set.slowGeometry = g_snap.slowGeometry; g_set.hideConsole = g_snap.hideConsole; g_set.onStart = g_snap.onStart;
+    g_set.logs = g_snap.logs; g_set.cutoff = g_snap.cutoff; g_set.surroundMul = g_snap.surroundMul; g_set.trainerOn = g_snap.trainerOn;
+}
+
 static void apply_to_ui(const KVMap *forced) {
     KVMap r;
     int i, found = 0;
@@ -504,6 +524,7 @@ static void apply_to_ui(const KVMap *forced) {
     g_applying = 0;
     free(g_savedSig);
     g_savedSig = ui_sig();
+    snap_take();
     update_buttons();
 }
 
@@ -602,6 +623,7 @@ static int do_save(void) {
     if (want != g_optWin) PostMessageW(g_main, WM_APP_LAYOUT, (WPARAM)want, 0);   /* after this message: the Save button itself moves */
     free(g_savedSig);
     g_savedSig = ui_sig();
+    snap_take();
     update_buttons();
     return ok;
 }
@@ -1006,7 +1028,7 @@ static void size_columns(void);
 /* back to the default window: size, centered position, splitter and column widths */
 static void reset_window(int keepColumns) {
     RECT wa;
-    int w = g_optWin ? S(860) : S(1200), h = g_optWin ? S(720) : S(800), x, y, ow = S(560), oh = S(800), gap = S(8);
+    int w = g_optWin ? S(860) : S(1340), h = g_optWin ? S(720) : S(800), x, y, ow = S(690), oh = S(800), gap = S(8);
     if (IsZoomed(g_main) || IsIconic(g_main)) ShowWindow(g_main, SW_RESTORE);
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
     if (w > wa.right - wa.left) w = wa.right - wa.left;
@@ -1015,7 +1037,7 @@ static void reset_window(int keepColumns) {
     x = wa.left + (wa.right - wa.left - w) / 2;
     y = wa.top + (wa.bottom - wa.top - h) / 2;
     if (g_optWin) {   /* the options are in a window of their own: the main window is narrower, and the options window stands next to it when both fit */
-        if (x + w + gap + ow > wa.right) ow = wa.right - x - w - gap > S(460) ? wa.right - x - w - gap : ow;   /* the main window stays centered; the settings window is beside it */
+        if (x + w + gap + ow > wa.right) ow = wa.right - x - w - gap > S(660) ? wa.right - x - w - gap : ow;   /* the main window stays centered; the settings window is beside it */
         g_optRect.w = ow; g_optRect.h = oh;
         g_optRect.x = x + w + gap; g_optRect.y = wa.top + (wa.bottom - wa.top - oh) / 2;
         if (g_optRect.x + g_optRect.w > wa.right) g_optRect.x = wa.right - g_optRect.w;
@@ -1091,7 +1113,7 @@ static void do_layout(void) {
     sbh = tr.bottom - tr.top;
     cw = rc.right; ch = rc.bottom - sbh;
     if (g_splitX <= 0 && g_set.splitX > 0) g_splitX = S(g_set.splitX);   /* the splitter of the last session */
-    if (g_splitX <= 0) g_splitX = (cw - 2 * m - gap) * 3 / 5;
+    if (g_splitX <= 0) g_splitX = (cw - 2 * m - gap) - S(660) > S(360) ? (cw - 2 * m - gap) - S(660) : (cw - 2 * m - gap) * 3 / 5;   /* the tabs get 660 pixels (the Combos tab needs them), the list the rest */
     leftW = g_splitX;
     if (leftW < S(600)) leftW = S(600);   /* the toolbar is over the list */
     if (leftW > cw - 2 * m - gap - S(300)) leftW = cw - 2 * m - gap - S(300);
@@ -1241,11 +1263,13 @@ static LRESULT CALLBACK opt_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         break;
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mi = (MINMAXINFO *)l;
-        mi->ptMinTrackSize.x = S(460);
+        mi->ptMinTrackSize.x = S(660);
         mi->ptMinTrackSize.y = S(480);
         return 0;
     }
-    case WM_CLOSE:   /* the window is only hidden: the next "Options" shows it again, with the same state */
+    case WM_CLOSE:   /* the X of the settings window works like Cancel: the changes are dropped, nothing is saved */
+        snap_restore();
+        apply_to_ui(NULL);
         hide_opt(1);
         return 0;
     }
@@ -1297,7 +1321,7 @@ static void set_optmode(int on, int show) {
     on = on != 0;
     if (on && !g_opt) {
         RECT wa;
-        int w = S(560), h = S(800), x, y;
+        int w = S(690), h = S(800), x, y;
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
         if (h > wa.bottom - wa.top) h = wa.bottom - wa.top;
         if (w > wa.right - wa.left) w = wa.right - wa.left;
@@ -1686,6 +1710,7 @@ static void on_command(int id, int code, HWND src) {
         { int mode = (int)SendMessageW(W.cbTheme, CB_GETCURSEL, 0, 0); if (mode >= 0 && mode != g_set.themeMode) apply_theme_mode(mode); }   /* the Theme box */
         return;
     case ID_CANCELBTN:   /* Cancel: the changes are dropped (the saved settings are shown again); a settings window of its own closes */
+        snap_restore();
         apply_to_ui(NULL);
         if (g_optWin && g_opt) hide_opt(1);
         return;
@@ -2040,8 +2065,9 @@ static LRESULT CALLBACK main_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         break;
     case WM_CLOSE:
         if (!g_leaveTrainer) stop_trainer();
+        snap_restore();
         remember_window();
-        do_save();
+        settings_save();   /* the window, the columns and the choices made so far; the changes of the settings that were not confirmed with OK are not saved */
         DestroyWindow(h);
         return 0;
     case WM_DESTROY:
@@ -2125,7 +2151,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR cmd, int show) {
     wc.hIconSm = g_iconSm;
     RegisterClassExW(&wc);
 
-    W0 = g_set.optWindow ? S(860) : S(1200); H0 = g_set.optWindow ? S(720) : S(800);   /* without the tabs the main window is narrower */
+    W0 = g_set.optWindow ? S(860) : S(1340); H0 = g_set.optWindow ? S(720) : S(800);   /* without the tabs the main window is narrower */
     {
         RECT wa;
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);

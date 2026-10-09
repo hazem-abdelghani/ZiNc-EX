@@ -22,6 +22,12 @@ static const wchar_t *INFO =
     L"\u2022 The short number notation (236+HP) still works.\n\n"
     L"Note: the move lists (Load Character) are from Street Fighter EX2 Plus. Combos are made for the Street Fighter games; other games can use them too, but the characters, moves and the button names are Street Fighter's.";
 
+/* the two sentences that stay on the tab; the rest is behind the How It Works button */
+static const wchar_t *SHORT_INFO = L"Give a row a trigger (click its Keyboard, XInput or DirectInput cell) and the move of that row is played for you whenever you press the trigger in a game. Double-click a name to rename a combo.";
+
+/* the How It Works button: the whole explanation in a window of its own */
+static void dlg_howto(void);
+
 /* the Legend button: what the short names stand for, in a small table */
 static void dlg_legend(void) {
     static const struct { const wchar_t *a, *b; } ROWS[] = {
@@ -444,6 +450,20 @@ static LRESULT CALLBACK tv_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     return DefWindowProcW(h, m, w, l);
 }
 
+static void dlg_howto(void) {
+    Modal md;
+    HWND tv;
+    int cw = 640, ch = 400;
+    memset(&md, 0, sizeof md);
+    md.kind = 8; md.owner = g_main;
+    wcsncpy(md.title, L"How It Works", 119);
+    make_modal(&md, cw, ch);
+    tv = mkat(md.dlg, L"ZTextView", INFO, WS_VSCROLL | WS_BORDER, 10, 10, cw - 20, ch - 58, 0);
+    th_control(tv, L"SCROLLBAR");   /* the same dark scroll bar theme as the lists */
+    mkat(md.dlg, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, cw - 90, ch - 36, 80, 26, IDOK);
+    run_modal(&md);
+}
+
 void cmb_create(HWND page, HWND tip) {
     static const wchar_t *cols[] = {L"#", L"Name", L"Type", L"Sequence", L"Player", L"Side", L"Keyboard", L"XInput", L"DirectInput"};
     static const int widths[] = {40, 120, 64, 270, 64, 64, 64, 64, 70};
@@ -460,8 +480,9 @@ void cmb_create(HWND page, HWND tip) {
         wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
         wc.lpszClassName = L"ZTextView";
         RegisterClassW(&wc);
-        u->info = mk(page, L"ZTextView", INFO, WS_VSCROLL, g_dark ? 0 : WS_EX_CLIENTEDGE, 0);
-        th_control(u->info, L"SCROLLBAR");   /* the same dark scroll bar theme as the lists */
+    }
+    u->info = mk(page, L"STATIC", SHORT_INFO, SS_LEFT, 0, 0);
+    {
     }
     u->lStep = mk(page, L"STATIC", L"Step (ms)", SS_LEFT, 0, 0); T(u->lStep, L"Step (ms)");
     u->eStep = mk(page, L"EDIT", L"", ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, ID_K_STEP); T(u->eStep, L"Step (ms)");
@@ -521,6 +542,8 @@ void cmb_create(HWND page, HWND tip) {
     combo_fill(u->cbFace, faces, 2);
     SendMessageW(u->cbFace, CB_SETCURSEL, 0, 0);
     u->bClear = mk(page, L"BUTTON", L"Clear Slot", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_K_CLEAR);
+    u->bHow = mk(page, L"BUTTON", L"How It Works", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_K_HOWTO);
+    set_tip(tip, page, u->bHow, L"The whole explanation of the Combos tab: how to fill a row, charge moves and good to know.");
     u->bLegend = mk(page, L"BUTTON", L"Legend", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_K_LEGEND);
     set_tip(tip, page, u->bLegend, L"What the short names (QCF, HP, DR, BN1 ...) stand for.");
     u->bDef = mk(page, L"BUTTON", L"Defaults", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_K_DEF); T(u->bDef, L"Combo Defaults");
@@ -534,23 +557,24 @@ static void place(HWND h, int x, int y, int w, int hh) { SetWindowPos(h, NULL, x
 void cmb_layout(int w, int h) {
     CmbUI *u = &g_cmb;
     int m = S(8), x = m, y = m, W = w - 2 * m, bh = S(26), rh = S(24), lw, form, fy, half;
-    int infoH = S(164);
+    int infoH = S(46), rbw = S(110);   /* the two sentences; the buttons are 110 wide */
     place(u->info, x, y, W, infoH);
     y += infoH + S(4);
-    place(u->bLegend, x + W - S(90), y - 1, S(90), S(26));   /* under the text, at the right */
+    place(u->bHow, x + W - rbw, y - 1, rbw, S(26));   /* under the text, at the right: How It Works above Legend */
     lw = text_width(u->page, L"Step (ms)") + S(10);
     place(u->lStep, x, y + S(4), lw, S(18));
     place(u->eStep, x + lw, y, S(60), rh);
     place(u->lChg, x + lw + S(80), y + S(4), text_width(u->page, L"Charge (ms)") + S(10), S(18));
     place(u->eChg, x + lw + S(80) + text_width(u->page, L"Charge (ms)") + S(10), y, S(60), rh);
     {   /* the check box to the right of Charge, as far as the Legend button leaves room */
-        int cx = x + lw + S(80) + text_width(u->page, L"Charge (ms)") + S(10) + S(60) + S(14), cwid = x + W - S(96) - cx;
+        int cx = x + lw + S(80) + text_width(u->page, L"Charge (ms)") + S(10) + S(60) + S(14), cwid = x + W - rbw - S(10) - cx;
         place(u->chCredit, cx, y + S(2), cwid > S(40) ? cwid : S(40), S(22));
     }
     y += S(30);
     lw = text_width(u->page, L"Load Character") + S(10);
     place(u->lLoad, x, y + S(4), lw, S(18));
     place(u->cbLoad, x + lw, y, S(260), S(260));
+    place(u->bLegend, x + W - rbw, y - 1, rbw, S(26));
     y += S(32);
     form = 4 * S(28) + 3 * S(32) + S(30) + S(22);           /* four form rows, three rows of sequence buttons, the button row and the note line */
     fy = h - m - form;
@@ -818,6 +842,7 @@ static void token_click(int i) {
 int cmb_command(int id, int code) {
     CmbUI *u = &g_cmb;
     ComboSlot *s;
+    if (id == ID_K_HOWTO) { if (code == BN_CLICKED) dlg_howto(); return 1; }
     if (id == ID_K_LEGEND) { if (code == BN_CLICKED) dlg_legend(); return 1; }
     if (id == ID_K_CREDIT) { if (code == BN_CLICKED) g_in.chargeCredit = SendMessageW(u->chCredit, BM_GETCHECK, 0, 0) == BST_CHECKED; return 1; }
     if (id >= ID_K_TOK && id < ID_K_TOK + CMB_NTOK) { if (code == BN_CLICKED) token_click(id - ID_K_TOK); return 1; }

@@ -316,7 +316,7 @@ extern const IconData g_icons[];
 extern const int g_nIcons;
 #define CMB_NTOK 30   /* the buttons under the Sequence box */
 typedef struct {
-    HWND page, info, lStep, eStep, lChg, eChg, lLoad, cbLoad, lv, lChar, cbChar, lMove, cbMove, lSeq, eSeq, lPlay, cbPlay, lFace, cbFace, bClear, bLegend, chCredit, bDef, note, tok[CMB_NTOK];
+    HWND page, info, lStep, eStep, lChg, eChg, lLoad, cbLoad, lv, lChar, cbChar, lMove, cbMove, lSeq, eSeq, lPlay, cbPlay, lFace, cbFace, bClear, bLegend, bHow, chCredit, bDef, note, tok[CMB_NTOK];
     int syncing, loading;
 } CmbUI;
 extern CmbUI g_cmb;
@@ -354,7 +354,7 @@ enum {
     ID_C_PROF = 430, ID_C_PSAVE, ID_C_PDEL, ID_C_PUPD, ID_C_PREN,
     ID_F_MAKER = 440, ID_F_GENRE, ID_F_REGION, ID_RESETSORT,
     ID_K_TOK = 470,   /* ... + CMB_NTOK - 1: the sequence buttons */
-    ID_K_LEGEND = 510, ID_K_CREDIT
+    ID_K_LEGEND = 510, ID_K_CREDIT, ID_K_HOWTO
 };
 
 #define WM_APP_GAMES (WM_APP + 1)

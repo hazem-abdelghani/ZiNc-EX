@@ -7,7 +7,6 @@
 #define SS 4            /* supersampling */
 #define PI_ 3.14159265358979
 
-#define FAV_GOLD RGB(255, 190, 0)   /* #FFBE00: the colour of a favorite star */
 static unsigned char *g_mask[TI_N * 2];   /* the alpha mask of every icon (and of the filled variant of the star) */
 static int g_maskSz;
 
@@ -294,7 +293,6 @@ int tb_draw(const DRAWITEMSTRUCT *di) {
             SelectObject(di->hDC, ob); SelectObject(di->hDC, op);
             DeleteObject(pb);
         }
-        if (icon == TI_FAV && chk && !dis) fg = FAV_GOLD;   /* the switched-on star is gold */
         mk = mask_for(icon, icon == TI_FAV && chk, sz);
         if (!mk) return 1;
         memset(&bi, 0, sizeof bi);

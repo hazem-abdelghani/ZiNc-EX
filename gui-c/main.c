@@ -1504,7 +1504,7 @@ static void create_ui(void) {
     ListView_SetExtendedListViewStyle(W.lv, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_CHECKBOXES | LVS_EX_SUBITEMIMAGES);
     ListView_SetColumnOrderArray(W.lv, NCOLS, (int *)kColOrder);
     ListView_SetImageList(W.lv, tb_status_images(S(16)), LVSIL_SMALL);
-    ListView_SetImageList(W.lv, tb_star_images(S(16), th_gray(), th_text()), LVSIL_STATE);   /* the check box of a favorite is a star */
+    ListView_SetImageList(W.lv, tb_star_images(S(16), th_gray(), RGB(255, 190, 0)), LVSIL_STATE);   /* the check box of a favorite is a star */
     /* the state holders of Favorites Only and Create Desktop Icon stay (hidden); the toolbar has the visible buttons */
     W.favOnly = mk(g_main, L"BUTTON", L"Favorites Only", BS_AUTOCHECKBOX | WS_TABSTOP, 0, ID_FAVONLY);
     W.iconBtn = mk(g_main, L"BUTTON", L"Create Desktop Icon", BS_PUSHBUTTON | WS_TABSTOP | WS_DISABLED, 0, ID_ICONBTN);

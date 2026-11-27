@@ -240,7 +240,7 @@ static size_t data_start(const unsigned char *buf, size_t len, const ZipEntry *e
     size_t o = e->offset;
     if (o + 30 > len || rd32(buf + o) != 0x04034b50UL) return 0;
     o += 30 + rd16(buf + o + 26) + rd16(buf + o + 28);
-    if (o > len || o + e->csize > len) return 0;
+    if (o > len || e->csize > len - o) return 0;
     return o;
 }
 

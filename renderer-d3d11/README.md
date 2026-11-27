@@ -14,7 +14,10 @@
 * `BezelImage` (default empty): path of a PNG with a transparent window (UTF-8 text, the only text value). The picture is shown in the window (found from the transparent area through the middle of the image, so rectangular windows) and the image is drawn over it, fitted into the game window; `KeepAspect` applies inside the window. Loaded with GDI+.
 * `Borderless` (default 0): with `FullScreen = 1`, 1 uses a borderless window over the desktop at its current resolution instead of switching the screen mode to `Width` x `Height`.
 * `VSync` (default 0): 1 waits for the screen refresh before showing each frame (no tearing).
+* `TextureSmoothing` (default 1): 1 draws 3D textures with bilinear smoothing (2D sprites and backgrounds stay sharp); 0 shows the blocky texels.
 * `FXAA` (default 0): 1 applies a FXAA pass to the final window picture.
+* `CRT` (default 0): CRT look preset: 1 light scanlines, 2 classic (scanlines and phosphor mask), 3 curved screen (also bulge and vignette). Replaces `ScanLines` while on; scanlines follow the console lines and fade out below 2 window pixels per line.
+* `IntegerScale` (default 0): 1 makes the picture height a whole multiple of the console picture (fits as usual if the window is smaller); with `KeepAspect=0` (stretch) the picture keeps 4:3 (3:4 rotated) while this is on; not used with `KeepAspect=3`.
 * `XBRZ` (default 2): 0 = off, 1 draws the game at the console resolution and enlarges it with xBRZ; `XBRZ = 2` applies xBRZ to 2D objects only (sprites, images, screen-aligned rectangles) and keeps 3D at `InternalScale` (a GPU port of the xBRZ algorithm, based on the
   DeSmuME team / Hyllian shader from the libretro collection; GPL).
 * Needs Windows 7 SP1+ with Direct3D 11 (or WARP) and `d3dcompiler_47.dll` (Windows 8.1 and later have it).
@@ -22,7 +25,7 @@
 `ShowFPS = 1` draws a frame counter ("FPS 60") in the top left corner of the picture. The window title is never changed (tools such as the ZiNc 1.1 trainer find ZiNc by its exact title).
 
 Reads `renderer.cfg`: `XSize YSize FullScreen ScanLines Filtering ShowFPS FrameLimitation FrameSkipping
-FramerateDetection FramerateManual KeepAspect InternalScale XBRZ Logging`. The other keys of the file (`EnableKeys`, `FastExcel`, `TurnDisplay`, ...) belong to the OpenGL / Direct3D renderers and are ignored here. Problems are logged to `zinc-d3d11.log` next to ZiNc.exe (only when `Logging = 1` is set in renderer.cfg, i.e. "Enable Logs" is on in the GUI; off by default).
+FramerateDetection FramerateManual KeepAspect InternalScale XBRZ Logging Dedither Overscan BezelImage Borderless VSync FXAA TextureSmoothing CRT IntegerScale`. The other keys of the file (`EnableKeys`, `FastExcel`, `TurnDisplay`, ...) belong to the OpenGL / Direct3D renderers and are ignored here. Problems are logged to `zinc-d3d11.log` next to ZiNc.exe (only when `Logging = 1` is set in renderer.cfg, i.e. "Enable Logs" is on in the GUI; off by default).
 
 Frame pacing: the swap chain uses the flip model (Windows 10+; the old bit-blit model is the fallback) with at most one queued frame,
 and the frame limiter waits with a high resolution timer and a short spin instead of `Sleep(1)`. With `Logging = 1` (GUI: "Enable Logs")

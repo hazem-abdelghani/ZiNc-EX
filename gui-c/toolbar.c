@@ -9,6 +9,9 @@
 
 static unsigned char *g_mask[TI_N * 2];   /* the alpha mask of every icon (and of the filled variant of the star) */
 static int g_maskSz;
+static int g_labels;   /* a caption under the icons */
+void tb_labels(int on) { g_labels = on != 0; }
+void tb_set_label(HWND b, const wchar_t *text) { if (b) SetPropW(b, L"tblab", (HANDLE)text); }
 
 typedef struct { HDC dc; HBITMAP bmp, old; unsigned *bits; int big; double u; } Canvas;
 
@@ -263,7 +266,7 @@ int tb_draw(const DRAWITEMSTRUCT *di) {
     if (!di) return 0;
     if (di->CtlType == ODT_STATIC && GetPropW(di->hwndItem, L"tbsep")) {
         RECT r = di->rcItem;
-        HBRUSH face = CreateSolidBrush(th_face()), ln = CreateSolidBrush(th_gray());
+        HBRUSH face = CreateSolidBrush(th_toolbar_bg()), ln = CreateSolidBrush(th_gray());
         RECT l = {(r.left + r.right) / 2, r.top + (r.bottom - r.top) / 5, (r.left + r.right) / 2 + 1, r.bottom - (r.bottom - r.top) / 5};
         FillRect(di->hDC, &r, face);
         FillRect(di->hDC, &l, ln);
@@ -276,7 +279,8 @@ int tb_draw(const DRAWITEMSTRUCT *di) {
         int dis = (di->itemState & ODS_DISABLED) != 0, down = (di->itemState & ODS_SELECTED) != 0;
         RECT r = di->rcItem;
         int sz = S(20), x, y;
-        COLORREF face = th_face(), bg = face, fg = dis ? th_gray() : th_text();
+        COLORREF face = th_toolbar_bg(), bg = face, fg = dis ? th_gray() : th_text();
+        const wchar_t *lab = g_labels ? (const wchar_t *)GetPropW(di->hwndItem, L"tblab") : NULL;
         unsigned char *mk;
         BITMAPINFO bi;
         unsigned *bits = NULL;
@@ -291,13 +295,34 @@ int tb_draw(const DRAWITEMSTRUCT *di) {
         hb = CreateSolidBrush(face);
         FillRect(di->hDC, &r, hb);
         DeleteObject(hb);
-        if (bg != face) {   /* a soft rounded plate under the icon */
-            HBRUSH pb = CreateSolidBrush(bg);
-            HPEN np = (HPEN)GetStockObject(NULL_PEN);
-            HGDIOBJ ob = SelectObject(di->hDC, pb), op = SelectObject(di->hDC, np);
-            RoundRect(di->hDC, r.left + 1, r.top + 1, r.right - 1, r.bottom - 1, S(8), S(8));
-            SelectObject(di->hDC, ob); SelectObject(di->hDC, op);
-            DeleteObject(pb);
+        if (bg != face) {   /* a soft rounded plate under the icon: drawn pixel by pixel with smooth (anti-aliased) edges */
+            int pw = r.right - r.left, ph = r.bottom - r.top, px, py;
+            BITMAPINFO pbi;
+            unsigned *pbits = NULL;
+            HDC pdc = CreateCompatibleDC(di->hDC);
+            HBITMAP pbmp, pold;
+            memset(&pbi, 0, sizeof pbi);
+            pbi.bmiHeader.biSize = sizeof pbi.bmiHeader; pbi.bmiHeader.biWidth = pw; pbi.bmiHeader.biHeight = -ph;
+            pbi.bmiHeader.biPlanes = 1; pbi.bmiHeader.biBitCount = 32; pbi.bmiHeader.biCompression = BI_RGB;
+            pbmp = CreateDIBSection(pdc, &pbi, DIB_RGB_COLORS, (void **)&pbits, NULL, 0);
+            if (pbmp) {
+                double rad = S(5), hx = (pw - 2) / 2.0, hy = (ph - 2) / 2.0, cx = pw / 2.0, cy = ph / 2.0;
+                int fr = GetRValue(face), fg2 = GetGValue(face), fb2 = GetBValue(face), br2 = GetRValue(bg), bg2 = GetGValue(bg), bb2 = GetBValue(bg);
+                pold = (HBITMAP)SelectObject(pdc, pbmp);
+                for (py = 0; py < ph; py++) for (px = 0; px < pw; px++) {
+                    double qx = fabs(px + 0.5 - cx) - (hx - rad), qy = fabs(py + 0.5 - cy) - (hy - rad);
+                    double ox = qx > 0 ? qx : 0, oy = qy > 0 ? qy : 0;
+                    double d = sqrt(ox * ox + oy * oy) + (qx > qy ? (qx < 0 ? qx : 0) : (qy < 0 ? qy : 0)) - rad;   /* distance to the edge: < 0 inside */
+                    double cov = 0.5 - d;
+                    int c;
+                    if (cov < 0) cov = 0; else if (cov > 1) cov = 1;
+                    c = (int)(cov * 255 + 0.5);
+                    pbits[py * pw + px] = (unsigned)((fr * (255 - c) + br2 * c) / 255) << 16 | (unsigned)((fg2 * (255 - c) + bg2 * c) / 255) << 8 | (unsigned)((fb2 * (255 - c) + bb2 * c) / 255);
+                }
+                BitBlt(di->hDC, r.left, r.top, pw, ph, pdc, 0, 0, SRCCOPY);
+                SelectObject(pdc, pold); DeleteObject(pbmp);
+            }
+            DeleteDC(pdc);
         }
         mk = mask_for(icon, icon == TI_FAV && chk, sz);
         if (!mk) return 1;
@@ -314,10 +339,19 @@ int tb_draw(const DRAWITEMSTRUCT *di) {
                 int rr = (br * (255 - a) + fr * a) / 255, gg = (bgc * (255 - a) + fgc * a) / 255, b2 = (bb * (255 - a) + fb * a) / 255;
                 bits[y * sz + x] = ((unsigned)rr << 16) | ((unsigned)gg << 8) | (unsigned)b2;
             }
-            BitBlt(di->hDC, r.left + (r.right - r.left - sz) / 2, r.top + (r.bottom - r.top - sz) / 2, sz, sz, mdc, 0, 0, SRCCOPY);
+            BitBlt(di->hDC, r.left + (r.right - r.left - sz) / 2, lab ? r.top + S(5) : r.top + (r.bottom - r.top - sz) / 2, sz, sz, mdc, 0, 0, SRCCOPY);
             SelectObject(mdc, old); DeleteObject(bmp);
         }
         DeleteDC(mdc);
+        if (lab) {   /* the caption under the icon */
+            RECT tr = r;
+            HGDIOBJ of = SelectObject(di->hDC, g_font);
+            tr.top = r.top + S(5) + sz + S(1); tr.bottom = r.bottom - 1;
+            SetBkMode(di->hDC, TRANSPARENT);
+            SetTextColor(di->hDC, fg);
+            DrawTextW(di->hDC, lab, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOPREFIX | DT_TOP);
+            SelectObject(di->hDC, of);
+        }
         return 1;
     }
     return 0;

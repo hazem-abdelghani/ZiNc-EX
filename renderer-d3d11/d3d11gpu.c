@@ -469,15 +469,14 @@ static const char *HLSL =
 "/* bezel image over the picture: straight alpha */\n"
 "float4 ps_bezel(DSO v) : SV_Target { return srcTex.SampleLevel(smp, v.uv, 0); }\n"
 "\n"
-"/* ---------------------------------------------------------------- FXAA (after Timothy Lottes' FXAA 2: edge detection by luma and a blur along the edge) */\n"
+"/* ---------------------------------------------------------------- the post pass: FXAA (after Timothy Lottes' FXAA 2: edge detection by luma and a blur along the edge) and the CRT look */\n"
 "float fxLuma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }\n"
-"float4 ps_fxaa(DSO v) : SV_Target {\n"
-"    float2 px = params.yz;   /* one pixel in uv units */\n"
-"    float3 nw = srcTex.SampleLevel(smp, v.uv + float2(-1.0, -1.0) * px, 0).rgb;\n"
-"    float3 ne = srcTex.SampleLevel(smp, v.uv + float2( 1.0, -1.0) * px, 0).rgb;\n"
-"    float3 sw = srcTex.SampleLevel(smp, v.uv + float2(-1.0,  1.0) * px, 0).rgb;\n"
-"    float3 se = srcTex.SampleLevel(smp, v.uv + float2( 1.0,  1.0) * px, 0).rgb;\n"
-"    float3 m  = srcTex.SampleLevel(smp, v.uv, 0).rgb;\n"
+"float3 fxaaRgb(float2 uv, float2 px) {\n"
+"    float3 nw = srcTex.SampleLevel(smp, uv + float2(-1.0, -1.0) * px, 0).rgb;\n"
+"    float3 ne = srcTex.SampleLevel(smp, uv + float2( 1.0, -1.0) * px, 0).rgb;\n"
+"    float3 sw = srcTex.SampleLevel(smp, uv + float2(-1.0,  1.0) * px, 0).rgb;\n"
+"    float3 se = srcTex.SampleLevel(smp, uv + float2( 1.0,  1.0) * px, 0).rgb;\n"
+"    float3 m  = srcTex.SampleLevel(smp, uv, 0).rgb;\n"
 "    float lNW = fxLuma(nw), lNE = fxLuma(ne), lSW = fxLuma(sw), lSE = fxLuma(se), lM = fxLuma(m);\n"
 "    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));\n"
 "    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));\n"
@@ -487,19 +486,55 @@ static const char *HLSL =
 "    float dirReduce = max((lNW + lNE + lSW + lSE) * (0.25 * (1.0 / 8.0)), 1.0 / 128.0);\n"
 "    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);\n"
 "    dir = min(float2(8.0, 8.0), max(float2(-8.0, -8.0), dir * rcpDirMin)) * px;\n"
-"    float3 rgbA = 0.5 * (srcTex.SampleLevel(smp, v.uv + dir * (1.0 / 3.0 - 0.5), 0).rgb + srcTex.SampleLevel(smp, v.uv + dir * (2.0 / 3.0 - 0.5), 0).rgb);\n"
-"    float3 rgbB = rgbA * 0.5 + 0.25 * (srcTex.SampleLevel(smp, v.uv + dir * -0.5, 0).rgb + srcTex.SampleLevel(smp, v.uv + dir * 0.5, 0).rgb);\n"
+"    float3 rgbA = 0.5 * (srcTex.SampleLevel(smp, uv + dir * (1.0 / 3.0 - 0.5), 0).rgb + srcTex.SampleLevel(smp, uv + dir * (2.0 / 3.0 - 0.5), 0).rgb);\n"
+"    float3 rgbB = rgbA * 0.5 + 0.25 * (srcTex.SampleLevel(smp, uv + dir * -0.5, 0).rgb + srcTex.SampleLevel(smp, uv + dir * 0.5, 0).rgb);\n"
 "    float lB = fxLuma(rgbB);\n"
-"    return float4((lB < lMin || lB > lMax) ? rgbA : rgbB, 1.0);\n"
+"    return (lB < lMin || lB > lMax) ? rgbA : rgbB;\n"
+"}\n"
+"/* params: x = FXAA on, yz = one window pixel in uv units, w = number of console lines (negative: the picture is turned by 90 degrees, so the lines run down the screen)\n"
+"   region: the picture in window pixels (x y w h); xs: scanline strength, phosphor mask strength, screen curvature, vignette */\n"
+"float4 ps_post(DSO v) : SV_Target {\n"
+"    float2 px = params.yz;\n"
+"    float2 uv = v.uv;\n"
+"    float scan = xs.x, mask = xs.y, curve = xs.z, vig = xs.w;\n"
+"    float3 c;\n"
+"    if (scan + mask + curve + vig > 0.0) {\n"
+"        float2 q = (v.p.xy - region.xy) / region.zw;\n"
+"        if (q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0) {\n"
+"            float2 cc = q * 2.0 - 1.0;\n"
+"            float2 cs = cc * float2(1.0 + curve * cc.y * cc.y, 1.0 + curve * cc.x * cc.x);   /* a bulging screen: the corners are cut off */\n"
+"            if (abs(cs.x) > 1.0 || abs(cs.y) > 1.0) return float4(0.0, 0.0, 0.0, 1.0);\n"
+"            float2 qs = cs * 0.5 + 0.5;\n"
+"            uv = (region.xy + qs * region.zw) * px;\n"
+"            c = params.x > 0.5 ? fxaaRgb(uv, px) : srcTex.SampleLevel(smp, uv, 0).rgb;\n"
+"            float lines = abs(params.w);\n"
+"            bool turned = params.w < 0.0;\n"
+"            float along = turned ? qs.x : qs.y;\n"
+"            float perLine = (turned ? region.z : region.w) / max(lines, 1.0);   /* window pixels per console line */\n"
+"            float sEff = scan * saturate(perLine - 1.0);   /* with fewer than 2 pixels per line the lines would only flicker */\n"
+"            float d = abs(frac(along * lines) - 0.5) * 2.0;\n"
+"            c *= (1.0 - sEff * d * d) * (1.0 + 0.25 * sEff);\n"
+"            if (mask > 0.0) {\n"
+"                float m = 1.0 - mask * 0.8;\n"
+"                int i = int(fmod(floor(v.p.x), 3.0));\n"
+"                float3 pat = i == 0 ? float3(1.0, m, m) : (i == 1 ? float3(m, 1.0, m) : float3(m, m, 1.0));\n"
+"                c *= pat * lerp(1.0, 3.0 / (1.0 + 2.0 * m), 0.7);\n"
+"            }\n"
+"            c *= 1.0 - vig * dot(cs, cs) * 0.5;\n"
+"            return float4(saturate(c), 1.0);\n"
+"        }\n"
+"    }\n"
+"    c = params.x > 0.5 ? fxaaRgb(uv, px) : srcTex.SampleLevel(smp, uv, 0).rgb;\n"
+"    return float4(c, 1.0);\n"
 "}\n"
 "\n";
 
 /* ------------------------------------------------------------------ configuration (renderer.cfg) */
 typedef struct {
     int xsize, ysize, fullscreen, depth, scanlines, filtering, dithering;
-    int showfps, framelimit, frameskip, ratedetect, ratemanual, keepaspect, iscale, xbrz, logging, fxaa, dedither, vsync, borderless, crop, texsmooth;
+    int showfps, framelimit, frameskip, ratedetect, ratemanual, keepaspect, iscale, xbrz, logging, fxaa, dedither, vsync, borderless, crop, texsmooth, crt, intscale;
 } Cfg;
-static Cfg cfg = {640, 480, 0, 32, 0, 1, 1, 1, 1, 0, 1, 60, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1};   /* TextureSmoothing (0 / 1) is on by default; FXAA (0 / 1), Dedither (0-3), VSync and Borderless (0 / 1) are off by default; InternalScale (default 0 = auto), XBRZ (default 2 = xBRZ for 2D objects only), Logging (default off) */
+static Cfg cfg = {640, 480, 0, 32, 0, 1, 1, 1, 1, 0, 1, 60, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 0};   /* TextureSmoothing (0 / 1) is on by default; FXAA (0 / 1), Dedither (0-3), VSync and Borderless (0 / 1) are off by default; InternalScale (default 0 = auto), XBRZ (default 2 = xBRZ for 2D objects only), Logging (default off) */
 static char cfgPath[260];
 static char bezelPath[520];   /* BezelImage: a PNG with a transparent window for the picture (empty = none) */
 static char gameName[64];   /* from ZN_GPUopen: names the screenshot folder like the OpenGL renderer does */
@@ -548,12 +583,15 @@ static void load_cfg(const char *path) {
         else if (!_stricmp(key, "Borderless")) cfg.borderless = v;
         else if (!_stricmp(key, "Dedither")) cfg.dedither = v;
         else if (!_stricmp(key, "TextureSmoothing")) cfg.texsmooth = v ? 1 : 0;
+        else if (!_stricmp(key, "CRT")) cfg.crt = v;
+        else if (!_stricmp(key, "IntegerScale")) cfg.intscale = v ? 1 : 0;
         else if (!_stricmp(key, "Overscan")) cfg.crop = v;
     }
     fclose(f);
     if (cfg.keepaspect < 0 || cfg.keepaspect > 3) cfg.keepaspect = cfg.keepaspect ? 1 : 0;
     cfg.fxaa = cfg.fxaa != 0; cfg.vsync = cfg.vsync != 0; cfg.borderless = cfg.borderless != 0;
     if (cfg.dedither < 0 || cfg.dedither > 3) cfg.dedither = 0;
+    if (cfg.crt < 0 || cfg.crt > 3) cfg.crt = 0;
     if (cfg.crop < 0) cfg.crop = 0;
     if (cfg.crop > 64) cfg.crop = 64;
     if (cfg.xsize < 160) cfg.xsize = 160;
@@ -628,7 +666,8 @@ static ID3D11ShaderResourceView *vramSRV, *dispSRV;
 static ID3D11Buffer *vbDraw, *vbDisp, *cbDisp;
 static ID3D11InputLayout *ilDraw, *ilDisp;
 static ID3D11VertexShader *vsDraw, *vsDisp;
-static ID3D11PixelShader *psDraw, *psDisp, *psXbrz, *psMix, *psFxaa;
+static ID3D11PixelShader *psDraw, *psDisp, *psXbrz, *psMix, *psPost;   /* psPost: FXAA and the CRT look, drawn over the picture */
+static float crtX, crtY, crtW, crtH, crtLines;   /* the picture in window pixels, the console lines it has (negative: turned by 90 degrees) */
 static ID3D11Texture2D *fxTex;                         /* FXAA: the picture before the filter, window sized */
 static ID3D11RenderTargetView *fxRTV;
 static ID3D11ShaderResourceView *fxSRV;
@@ -726,10 +765,10 @@ static int make_shaders(void) {
         ID3D10Blob *bpb = compile(fn, "ps_bezel", "ps_4_0");
         if (!bpb || FAILED(ID3D11Device_CreatePixelShader(dev, BP(bpb), BS(bpb), NULL, &psBezel))) logmsg("bezel: the shader could not be built");
     }
-    if (cfg.fxaa) {
-        ID3D10Blob *bpf = compile(fn, "ps_fxaa", "ps_4_0");
-        if (bpf && SUCCEEDED(ID3D11Device_CreatePixelShader(dev, BP(bpf), BS(bpf), NULL, &psFxaa))) logmsg("FXAA: on");
-        else { cfg.fxaa = 0; logmsg("FXAA: the shader could not be built, FXAA is off"); }
+    if (cfg.fxaa || cfg.crt) {
+        ID3D10Blob *bpf = compile(fn, "ps_post", "ps_4_0");
+        if (bpf && SUCCEEDED(ID3D11Device_CreatePixelShader(dev, BP(bpf), BS(bpf), NULL, &psPost))) logmsg("post pass: on (FXAA %d, CRT look %d)", cfg.fxaa, cfg.crt);
+        else { cfg.fxaa = 0; cfg.crt = 0; logmsg("the post pass shader could not be built: FXAA and the CRT look are off"); }
     }
     if (!bpm || FAILED(ID3D11Device_CreatePixelShader(dev, BP(bpm), BS(bpm), NULL, &psMix))) return 0;
     if (!bvd || !bpd || !bvp || !bpp || !bpx) return 0;
@@ -914,7 +953,7 @@ static void destroy_gpu(void) {
     int i;
     if (ctx) ID3D11DeviceContext_ClearState(ctx);
     REL(cbDisp); REL(vbDisp); REL(vbDraw); REL(dispSRV); REL(dispTex); REL(fpsSRV); REL(fpsTex); fpsDrawn = -1; REL(vramSRV); REL(vramGpu);
-    REL(fxSRV); REL(fxRTV); REL(fxTex); REL(psFxaa); fxW = fxH = 0;
+    REL(fxSRV); REL(fxRTV); REL(fxTex); REL(psPost); fxW = fxH = 0;
     REL(nativeSRV); REL(nativeRTV); REL(nativeTex); REL(scaledSRV); REL(scaledRTV); REL(scaledTex); REL(smpLinear); REL(smpPoint); REL(bezSRV); REL(bezTex); REL(psBezel); REL(bsAlpha); REL(rsScissor);
     for (i = 0; i < NSTATES; i++) REL(bstate[i]);
     REL(ilDisp); REL(ilDraw); REL(psMix); REL(psXbrz); REL(psDisp); REL(vsDisp); REL(psDraw); REL(vsDraw); REL(bbRTV); REL(sc); REL(ctx); REL(dev);
@@ -1766,7 +1805,7 @@ static void draw_bezel(int dw, int dh) {
     ID3D11DeviceContext_OMSetBlendState(ctx, bstate[0], bf, 0xffffffffu);
 }
 
-/* FXAA: the window sized texture the picture is drawn into before the filter */
+/* the post pass: the window sized texture the picture is drawn into before FXAA / the CRT look */
 static int ensure_fx(int dw, int dh) {
     D3D11_TEXTURE2D_DESC td;
     if (fxTex && fxW == dw && fxH == dh) return 1;
@@ -1777,16 +1816,20 @@ static int ensure_fx(int dw, int dh) {
     if (FAILED(ID3D11Device_CreateTexture2D(dev, &td, NULL, &fxTex)) || FAILED(ID3D11Device_CreateRenderTargetView(dev, (ID3D11Resource *)fxTex, NULL, &fxRTV)) ||
         FAILED(ID3D11Device_CreateShaderResourceView(dev, (ID3D11Resource *)fxTex, NULL, &fxSRV))) {
         REL(fxSRV); REL(fxRTV); REL(fxTex); fxW = fxH = 0;
-        logmsg("FXAA: the window sized texture could not be created, FXAA is off");
-        cfg.fxaa = 0;
+        logmsg("the window sized texture could not be created: FXAA and the CRT look are off");
+        cfg.fxaa = 0; cfg.crt = 0;
         return 0;
     }
     fxW = dw; fxH = dh;
     return 1;
 }
 
-/* FXAA: the filter, from the window sized texture to the back buffer */
-static void fxaa_pass(int dw, int dh) {
+/* the CRT look: the presets (renderer.cfg CRT = 1..3): scanline strength, phosphor mask, screen curvature, vignette */
+static const float crtPreset[4][4] = {{0, 0, 0, 0}, {0.30f, 0, 0, 0.10f}, {0.50f, 0.40f, 0, 0.15f}, {0.55f, 0.40f, 0.04f, 0.22f}};
+static int post_on(void) { return psPost && (cfg.fxaa || cfg.crt); }
+
+/* the post pass: FXAA and / or the CRT look, from the window sized texture to the back buffer */
+static void post_pass(int dw, int dh) {
     DVtx v[6] = {{-1, 1, 0, 0}, {1, 1, 1, 0}, {-1, -1, 0, 1}, {1, 1, 1, 0}, {1, -1, 1, 1}, {-1, -1, 0, 1}};
     D3D11_VIEWPORT vp;
     D3D11_RECT sr;
@@ -1794,10 +1837,11 @@ static void fxaa_pass(int dw, int dh) {
     UINT stride = sizeof(DVtx), off = 0;
     float bf[4] = {0, 0, 0, 0};
     ID3D11ShaderResourceView *none = 0;
-    if (!psFxaa || !fxSRV) return;
+    if (!psPost || !fxSRV) return;
     if (SUCCEEDED(ID3D11DeviceContext_Map(ctx, (ID3D11Resource *)vbDisp, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) { memcpy(ms.pData, v, sizeof v); ID3D11DeviceContext_Unmap(ctx, (ID3D11Resource *)vbDisp, 0); }
     if (SUCCEEDED(ID3D11DeviceContext_Map(ctx, (ID3D11Resource *)cbDisp, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
-        float prm[12] = {0, 1.0f / (float)dw, 1.0f / (float)dh, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        const float *cp = crtPreset[cfg.crt & 3];
+        float prm[12] = {cfg.fxaa ? 1.0f : 0.0f, 1.0f / (float)dw, 1.0f / (float)dh, crtLines, crtX, crtY, crtW, crtH, cp[0], cp[1], cp[2], cp[3]};
         memcpy(ms.pData, prm, sizeof prm);
         ID3D11DeviceContext_Unmap(ctx, (ID3D11Resource *)cbDisp, 0);
     }
@@ -1813,7 +1857,7 @@ static void fxaa_pass(int dw, int dh) {
     ID3D11DeviceContext_IASetPrimitiveTopology(ctx, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     ID3D11DeviceContext_IASetVertexBuffers(ctx, 0, 1, &vbDisp, &stride, &off);
     ID3D11DeviceContext_VSSetShader(ctx, vsDisp, NULL, 0);
-    ID3D11DeviceContext_PSSetShader(ctx, psFxaa, NULL, 0);
+    ID3D11DeviceContext_PSSetShader(ctx, psPost, NULL, 0);
     ID3D11DeviceContext_PSSetConstantBuffers(ctx, 0, 1, &cbDisp);
     ID3D11DeviceContext_PSSetSamplers(ctx, 0, 1, &smpLinear);
     ID3D11DeviceContext_PSSetShaderResources(ctx, 1, 1, &fxSRV);
@@ -1838,7 +1882,7 @@ static void draw_display(int dw, int dh) {
     ID3D11ShaderResourceView *none = 0;
     int mix = 0;
     ID3D11RenderTargetView *tgt = bbRTV;
-    if (cfg.fxaa && psFxaa && ensure_fx(dw, dh)) tgt = fxRTV;   /* FXAA: the picture goes to a window sized texture first */
+    if (post_on() && ensure_fx(dw, dh)) tgt = fxRTV;   /* FXAA / CRT look: the picture goes to a window sized texture first */
     ID3D11DeviceContext_ClearRenderTargetView(ctx, tgt, black);
     display_geometry(&sx, &sy, &sw, &sh);
     if (logF) {   /* the game changed what it shows: area of VRAM, colour depth, display on/off */
@@ -1878,7 +1922,7 @@ static void draw_display(int dw, int dh) {
         v0 = ((float)(sy * N) + 0.5f) / s; v1 = ((float)((sy + sh) * N) - 0.5f) / s;
     }
     mix = cfg.xbrz == 2 && nativeSRV && !(status & 0x00200000u);
-    if (cfg.keepaspect || rotated || (isFullscreen && cfg.xsize * 3 == cfg.ysize * 4)) {   /* a 4:3 resolution stays 4:3 on a wide screen */
+    if (cfg.keepaspect || cfg.intscale || rotated || (isFullscreen && cfg.xsize * 3 == cfg.ysize * 4)) {   /* a 4:3 resolution stays 4:3 on a wide screen */
         /* KeepAspect: 1 = 4:3, 2 = 16:9, 3 = pixel perfect (a whole number times the console picture, square pixels) */
         float aspect = cfg.keepaspect == 2 ? (rotated ? 9.0f / 16.0f : 16.0f / 9.0f) : (rotated ? 3.0f / 4.0f : 4.0f / 3.0f);
         int pw = rotated ? sh : sw, ph = rotated ? sw : sh, k = 0;   /* the console picture as shown: width x height */
@@ -1892,8 +1936,14 @@ static void draw_display(int dw, int dh) {
             if (aw / ah > aspect) { dhei = ah; dwid = dhei * aspect; }
             else { dwid = aw; dhei = dwid / aspect; }
         }
+        if (cfg.intscale && cfg.keepaspect != 3 && ph > 0) {   /* integer scaling: the height is a whole number times the console picture (even scanlines), the width follows the aspect ratio */
+            int kk = (int)(dhei / (float)ph);
+            if (kk >= 1 && (float)kk * (float)ph * aspect <= aw + 0.5f) { dhei = (float)(kk * ph); dwid = dhei * aspect; }
+        }
         dx = ax + (aw - dwid) * 0.5f; dy = ay + (ah - dhei) * 0.5f;
     }
+    crtX = dx; crtY = dy; crtW = dwid; crtH = dhei;
+    crtLines = rotated ? -(float)sh : (float)sh;
     for (i = 0; i < 4; i++) {
         float u, w;
         switch (rot) {
@@ -1914,7 +1964,7 @@ static void draw_display(int dw, int dh) {
     }
     if (SUCCEEDED(ID3D11DeviceContext_Map(ctx, (ID3D11Resource *)cbDisp, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
         static const float dedK[4] = {0.0f, 0.04f, 0.08f, 0.14f};
-        float prm[12] = {(float)cfg.scanlines, dedK[cfg.dedither & 3], (status & 0x00200000u) ? 1.0f : (float)N, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        float prm[12] = {cfg.crt ? 0.0f : (float)cfg.scanlines, dedK[cfg.dedither & 3], (status & 0x00200000u) ? 1.0f : (float)N, 0, 0, 0, 0, 0, 0, 0, 0, 0};
         if (cfg.xbrz) {
             int is24 = (status & 0x00200000u) != 0;
             prm[4] = is24 ? 0.0f : (float)sx; prm[5] = is24 ? 0.0f : (float)sy; prm[6] = (float)sw; prm[7] = (float)sh;
@@ -2060,7 +2110,7 @@ static void present(void) {
         make_backbuffer();
     }
     draw_display(bbW, bbH);
-    if (cfg.fxaa && psFxaa && fxRTV) fxaa_pass(bbW, bbH);
+    if (post_on() && fxRTV) post_pass(bbW, bbH);
     if (bezSRV) draw_bezel(bbW, bbH);
     draw_fps(bbW, bbH);
     {
@@ -2226,7 +2276,7 @@ static void log_header(void) {
     if (dc) ReleaseDC(NULL, dc);
     GetClientRect(hwnd, &rc);
     logmsg("game window: %dx%d | mode %u (%s) | rotation %d degrees | %s", (int)(rc.right - rc.left), (int)(rc.bottom - rc.top), gOpenMode, wide ? "extended GPU" : "standard GPU", (rotateMode & 3) * 90, isFullscreen ? "fullscreen" : "windowed");
-    logmsg("settings: size %dx%d | fullscreen %d | scanlines %d | filtering %d | dithering %d | show fps %d | frame limiter %d | frame skipping %d | frame rate detection %d (manual %d) | keep aspect %d | xBRZ %d | internal scale %s -> %dx | FXAA %d | dither smoothing %d | VSync %d | borderless %d | overscan %d | 3D texture smoothing %d", cfg.xsize, cfg.ysize, cfg.fullscreen, cfg.scanlines, cfg.filtering, cfg.dithering, cfg.showfps, cfg.framelimit, cfg.frameskip, cfg.ratedetect, cfg.ratemanual, cfg.keepaspect, cfg.xbrz, cfg.iscale > 0 ? "set" : "automatic", N, cfg.fxaa, cfg.dedither, cfg.vsync, cfg.borderless, cfg.crop, cfg.texsmooth);
+    logmsg("settings: size %dx%d | fullscreen %d | scanlines %d | filtering %d | dithering %d | show fps %d | frame limiter %d | frame skipping %d | frame rate detection %d (manual %d) | keep aspect %d | xBRZ %d | internal scale %s -> %dx | FXAA %d | dither smoothing %d | VSync %d | borderless %d | overscan %d | 3D texture smoothing %d | CRT look %d | integer scaling %d", cfg.xsize, cfg.ysize, cfg.fullscreen, cfg.scanlines, cfg.filtering, cfg.dithering, cfg.showfps, cfg.framelimit, cfg.frameskip, cfg.ratedetect, cfg.ratemanual, cfg.keepaspect, cfg.xbrz, cfg.iscale > 0 ? "set" : "automatic", N, cfg.fxaa, cfg.dedither, cfg.vsync, cfg.borderless, cfg.crop, cfg.texsmooth, cfg.crt, cfg.intscale);
     logmsg("frame timer: %s | target %.1f fps", hTimer ? "high resolution" : "standard (Sleep)", 1.0 / frame_seconds());
 }
 

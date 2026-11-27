@@ -58,7 +58,7 @@ typedef struct {
     int fullscreen;              /* -1 = same as global, 0 window, 1 fullscreen */
     int xsize, ysize;            /* 0 = same as global */
     int scale, xbrz;             /* Direct3D 11 only; -1 = same as global */
-    int borderless, aspect, fxaa, dedither, vsync, overscan, texsmooth;   /* Direct3D 11 only; -1 = same as global (borderless 0/1, aspect 0..3, fxaa 0/1, texsmooth 0/1, dedither 0..3, vsync 0/1, overscan in pixels) */
+    int borderless, aspect, fxaa, dedither, vsync, overscan, texsmooth, crt, intscale;   /* Direct3D 11 only; -1 = same as global (borderless 0/1, aspect 0..3, fxaa 0/1, texsmooth 0/1, dedither 0..3, vsync 0/1, overscan in pixels) */
     int sound, soundFilter, surround, exciter, slowGeometry, trainer;   /* -1 = same as global, 0 off, 1 on */
     wchar_t profile[64];         /* controls profile, "" = the current controls */
     wchar_t bezel[260];          /* Direct3D 11 bezel: "" = the bezel of the settings (or bezels\\<set>.png), "-" = none, else a file of the bezels folder (or a full path) */
@@ -70,6 +70,7 @@ const GameCfg *gamecfg_find(int id);            /* NULL when the game has no set
 int gamecfg_active(const GameCfg *c);
 void gamecfg_set(const GameCfg *c);
 void gamecfg_remove(int id);
+void game_files_clear(int id);   /* settings.c: deletes the config copies of a game in game-settings */
 int gamecfg_rename_profile(const wchar_t *from, const wchar_t *to);   /* the games that use the controls profile "from" use "to"; returns how many */
 int ui_mode_count(void);                        /* main.c: the screen modes of the Video tab */
 void ui_mode_get(int i, int *w, int *h);
@@ -92,7 +93,7 @@ typedef struct {
     wchar_t trainer[520];       /* a trainer program that is started with the games */
     int trainerOn;
     int themeMode;              /* 0 follow Windows, 1 light, 2 dark (applied at the next start); dark is what it comes to */
-    int hideSearch, hideFilters, hideToolbar;   /* the search bar / the filters bar of the game list are hidden */
+    int hideSearch, hideFilters, hideToolbar, hideStatus, toolbarLabels;   /* the search bar / the filters bar of the game list are hidden */
     int colsHidden;             /* game list columns that are hidden (bit 0 Favorite, 1 #, 2 Game, 3 Info, 4 Status, 5 Hardware, 6 Year); Info is hidden by default */
     int optWindow;              /* the options (Video, Audio ... tabs) are in a window of their own */
     int colsGame[7], colsCtl[5], colsCmb[9], splitX;   /* column widths of the lists and the splitter position (96 dpi pixels, 0 = default) */
@@ -101,10 +102,10 @@ typedef struct {
 } Settings;
 
 typedef struct { char key[32]; int val; } KV;
-typedef struct { KV kv[48]; int n; } KVMap;
+#define KV_CAP 64
+typedef struct { KV kv[KV_CAP]; int n; } KVMap;
 int kv_get(const KVMap *m, const char *key);
 void kv_set(KVMap *m, const char *key, int v);
-int kv_has(const KVMap *m, const char *key);
 
 typedef struct { int x, y, w, h; } WinRect;
 
@@ -224,6 +225,8 @@ void th_init(int dark);
 void th_window(HWND h);
 void th_control(HWND h, const wchar_t *cls);
 HBRUSH th_ctlcolor(UINT msg, HDC dc, HWND ctl, int onPage);   /* NULL in the light theme */
+int th_combo_item(const DRAWITEMSTRUCT *di);          /* dark theme: WM_DRAWITEM of a combo box (its items are drawn here); 1 when drawn */
+int th_combo_measure(MEASUREITEMSTRUCT *mi);          /* dark theme: WM_MEASUREITEM of a combo box; 1 when answered */
 void th_tab(HWND tab);
 void th_status(HWND sb);
 LRESULT th_menu_msg(HWND h, UINT m, WPARAM w, LPARAM l, int *handled);   /* the menu bar */
@@ -285,8 +288,8 @@ int dlg_text(HWND owner, const wchar_t *title, const wchar_t *prompt, wchar_t *t
 int dlg_capture_key(HWND owner, const wchar_t *label, char *dst, int cap);       /* 1 when changed */
 int cell_menu(HWND owner, int withSet);   /* right click menu of a list cell: 1 = Set, 2 = Clear */
 int dlg_pick_pad(HWND owner, const wchar_t *title, int isX, char *dst, int cap);
-#define APP_VERSION "1.0.0"
-#define APP_VERSION_W L"1.0.0"
+#define APP_VERSION "1.1.0"
+#define APP_VERSION_W L"1.1.0"
 void dlg_about(HWND owner);
 int dlg_game_settings(HWND owner, const Game *g);   /* gamecfg.c */
 void dlg_check_roms(HWND owner, const Game *g);     /* romcheck.c */
@@ -335,13 +338,13 @@ enum {
     ID_DEFAULTBTN, ID_SAVEBTN, ID_CANCELBTN, ID_OPTBTN, ID_TBFAV, ID_TBFS, ID_TBAVAIL, ID_TBAUDIO, ID_TBSET, ID_TBVIDEO, ID_TBCTL, ID_TBCMB,
     /* menu */
     ID_M_RESCAN = 200, ID_M_OPENZINC, ID_M_OPENROMS, ID_M_CLEARRECENT, ID_M_EXIT, ID_M_PLAY, ID_M_STOP, ID_M_TOGGLEFAV,
-    ID_M_SAVE, ID_M_SETAUDIO, ID_M_RESETWIN, ID_M_LAY0, ID_M_LAY1, ID_M_FOCUSSEARCH, ID_M_KEYS, ID_M_ABOUT, ID_M_OPTWIN, ID_COL0, ID_COL1, ID_COL2, ID_COL3, ID_COL4, ID_COL5, ID_COL6, ID_M_THEME0, ID_M_THEME1, ID_M_THEME2, ID_M_FAVONLY, ID_M_AVAIL, ID_M_SHOWSEARCH, ID_M_SHOWFILTERS, ID_M_SHOWTOOLBAR,
+    ID_M_SAVE, ID_M_SETAUDIO, ID_M_RESETWIN, ID_M_LAY0, ID_M_LAY1, ID_M_FOCUSSEARCH, ID_M_KEYS, ID_M_ABOUT, ID_M_OPTWIN, ID_COL0, ID_COL1, ID_COL2, ID_COL3, ID_COL4, ID_COL5, ID_COL6, ID_M_SIZECOLS, ID_M_THEME0, ID_M_THEME1, ID_M_THEME2, ID_M_FAVONLY, ID_M_AVAIL, ID_M_SHOWSEARCH, ID_M_SHOWFILTERS, ID_M_SHOWSTATUS, ID_M_TBLABELS, ID_M_SHOWTOOLBAR,
     ID_M_GAMECFG = 250, ID_M_PLAYFS, ID_M_PLAYWIN, ID_M_CHECKROMS, ID_M_OPENSNAP, ID_M_BACKUP, ID_M_RESTORE, ID_M_PLAYTRAINER,
     ID_PLAYREND0 = 270,   /* 8 ids: play with the n-th renderer once */
     ID_RECENT0 = 600,   /* 8 ids: the recent games (clear of the other ids) */
     /* video page */
     ID_V_RENDERER = 300, ID_V_RES, ID_V_W, ID_V_H, ID_V_ROT, ID_V_SCALE, ID_V_XBRZ, ID_V_DEPTH, ID_V_SCAN, ID_V_FILTER,
-    ID_V_TEXTYPE, ID_V_TEXCACHE, ID_V_BLEND, ID_V_FPS, ID_V_FULL, ID_V_DITHER, ID_V_SHOWFPS, ID_V_LIMIT, ID_V_SKIP, ID_V_AUTO, ID_V_FXAA, ID_V_OVERSCAN, ID_V_ASPECT, ID_V_FSMODE, ID_V_VSYNC, ID_V_DEDITHER, ID_V_TEXSMOOTH,
+    ID_V_TEXTYPE, ID_V_TEXCACHE, ID_V_BLEND, ID_V_FPS, ID_V_FULL, ID_V_DITHER, ID_V_SHOWFPS, ID_V_LIMIT, ID_V_SKIP, ID_V_AUTO, ID_V_FXAA, ID_V_OVERSCAN, ID_V_ASPECT, ID_V_FSMODE, ID_V_VSYNC, ID_V_DEDITHER, ID_V_TEXSMOOTH, ID_V_CRT, ID_V_INTSCALE,
     /* audio */
     ID_A_SOUND = 340, ID_A_FILTER, ID_A_CUTOFF, ID_A_SURR, ID_A_SURRMUL, ID_A_EXC,
     /* system */
@@ -368,7 +371,11 @@ enum { TI_REFRESH, TI_FAV, TI_PLAY, TI_STOP, TI_FULLSCREEN, TI_SETTINGS, TI_VIDE
 HWND tb_button(HWND parent, int id, int icon);        /* a flat button that shows an icon (owner drawn, theme colours) */
 HWND tb_separator(HWND parent);
 void tb_set_checked(HWND b, int on);                  /* the pressed look of a switch (Favorites Only) */
-int tb_draw(const DRAWITEMSTRUCT *di);                /* WM_DRAWITEM: 1 when it was a toolbar item */
+int tb_draw(const DRAWITEMSTRUCT *di);
+void tb_labels(int on);                                /* show a caption under the icons */
+void tb_set_label(HWND b, const wchar_t *text);         /* the caption of a button (a string that stays) */
+COLORREF th_toolbar_bg(void);                          /* the background of the toolbar */
+COLORREF th_menubar_bg(void);                          /* the background of the menu bar */
 unsigned char *tb_icon_mask(int icon, int variant, int sz);
 HIMAGELIST tb_star_images(int sz, COLORREF off, COLORREF on);   /* the favorite stars of the game list */
 HIMAGELIST tb_status_images(int sz);   /* the icons of the Status column: 0 = ROM set there (green), 1 = missing (red) */

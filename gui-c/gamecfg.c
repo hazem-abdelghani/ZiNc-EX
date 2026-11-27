@@ -10,11 +10,11 @@ static void gc_init(GameCfg *c, int id) {
     memset(c, 0, sizeof *c);
     c->id = id;
     c->rotate = -2;
-    c->fullscreen = c->sound = c->soundFilter = c->surround = c->exciter = c->slowGeometry = c->trainer = c->scale = c->xbrz = c->borderless = c->aspect = c->fxaa = c->texsmooth = c->dedither = c->vsync = c->overscan = -1;
+    c->fullscreen = c->sound = c->soundFilter = c->surround = c->exciter = c->slowGeometry = c->trainer = c->scale = c->xbrz = c->borderless = c->aspect = c->fxaa = c->texsmooth = c->dedither = c->vsync = c->overscan = c->crt = c->intscale = -1;
 }
 
 int gamecfg_active(const GameCfg *c) {
-    return c && (c->renderer[0] || c->rotate != -2 || c->fullscreen >= 0 || c->xsize > 0 || c->scale >= 0 || c->xbrz >= 0 || c->borderless >= 0 || c->aspect >= 0 || c->fxaa >= 0 || c->texsmooth >= 0 || c->dedither >= 0 || c->vsync >= 0 || c->overscan >= 0 || c->sound >= 0 ||
+    return c && (c->renderer[0] || c->rotate != -2 || c->fullscreen >= 0 || c->xsize > 0 || c->scale >= 0 || c->xbrz >= 0 || c->borderless >= 0 || c->aspect >= 0 || c->fxaa >= 0 || c->crt >= 0 || c->intscale >= 0 || c->texsmooth >= 0 || c->dedither >= 0 || c->vsync >= 0 || c->overscan >= 0 || c->sound >= 0 ||
                  c->soundFilter >= 0 || c->surround >= 0 || c->exciter >= 0 || c->slowGeometry >= 0 || c->profile[0] || c->bezel[0] || c->trainer >= 0);
 }
 
@@ -87,6 +87,8 @@ void gamecfg_load(void) {
         else if (!strcmp(key, "aspect")) { int x; if (xatoi(val, &x) && x >= 0 && x <= 3) cur->aspect = x; }
         else if (!strcmp(key, "texture_smoothing")) { int x; if (xatoi(val, &x)) cur->texsmooth = x ? 1 : 0; }
         else if (!strcmp(key, "fxaa")) { int x; if (xatoi(val, &x)) cur->fxaa = x ? 1 : 0; }
+        else if (!strcmp(key, "crt_look")) { int x; if (xatoi(val, &x) && x >= 0 && x <= 3) cur->crt = x; }
+        else if (!strcmp(key, "integer_scaling")) { int x; if (xatoi(val, &x)) cur->intscale = x ? 1 : 0; }
         else if (!strcmp(key, "dither_smoothing")) { int x; if (xatoi(val, &x) && x >= 0 && x <= 3) cur->dedither = x; }
         else if (!strcmp(key, "vsync")) { int x; if (xatoi(val, &x)) cur->vsync = x ? 1 : 0; }
         else if (!strcmp(key, "overscan")) { int x; if (xatoi(val, &x) && x >= 0 && x <= 64) cur->overscan = x; }
@@ -123,6 +125,8 @@ int gamecfg_save(void) {
         if (c->fxaa >= 0) buf_fmt(&b, "fxaa=%d\r\n", c->fxaa);
         if (c->texsmooth >= 0) buf_fmt(&b, "texture_smoothing=%d\r\n", c->texsmooth);
         if (c->dedither >= 0) buf_fmt(&b, "dither_smoothing=%d\r\n", c->dedither);
+        if (c->crt >= 0) buf_fmt(&b, "crt_look=%d\r\n", c->crt);
+        if (c->intscale >= 0) buf_fmt(&b, "integer_scaling=%d\r\n", c->intscale);
         if (c->vsync >= 0) buf_fmt(&b, "vsync=%d\r\n", c->vsync);
         if (c->overscan >= 0) buf_fmt(&b, "overscan=%d\r\n", c->overscan);
         if (c->sound >= 0) buf_fmt(&b, "sound=%d\r\n", c->sound);
@@ -141,9 +145,10 @@ int gamecfg_save(void) {
 }
 
 /* ---------------------------------------------------------------- the dialog */
+#define MAXCTL 24   /* the most rows of all tabs together (see NROWS below) */
 typedef struct {
-    HWND cb[24], lbl[24];
-    int tab[24];   /* the tab of every row */
+    HWND cb[MAXCTL], lbl[MAXCTL];
+    int tab[MAXCTL];   /* the tab of every row */
     HWND tabs;
     GameCfg cfg;
     wchar_t rend[16][64];
@@ -157,11 +162,12 @@ typedef struct {
 
 /* the rows, by tab: General, Video, Audio, Other */
 enum { R_REND, R_ROT, R_WIN, R_RES, R_BEZEL,
-       R_FSMODE, R_ASPECT, R_SCALE, R_XBRZ, R_TEXSM, R_FXAA, R_DEDITH, R_VSYNC, R_OVERSCAN,
+       R_FSMODE, R_ASPECT, R_INTSC, R_SCALE, R_XBRZ, R_TEXSM, R_FXAA, R_DEDITH, R_CRT, R_VSYNC, R_OVERSCAN,
        R_SOUND, R_FILT, R_SURR, R_EXC,
        R_SLOW, R_PROF, R_TRAIN, NROWS };
+typedef char rows_fit_in_dialog[(NROWS <= MAXCTL) ? 1 : -1];   /* a compile error when a row is added beyond the arrays of Dlg: raise MAXCTL */
 #define TOPY 84      /* the first row, below the tabs */
-#define MAXROWS 10   /* the most rows of a tab */
+#define MAXROWS 12   /* the most rows of a tab */
 static const int kOverscan[7] = {0, 4, 8, 12, 16, 24, 32};
 #define ID_G_RESET 1001
 
@@ -196,6 +202,8 @@ static int dlg_ok(Modal *md) {
     c->texsmooth = untri((int)SendMessageW(d->cb[R_TEXSM], CB_GETCURSEL, 0, 0));
     c->fxaa = untri((int)SendMessageW(d->cb[R_FXAA], CB_GETCURSEL, 0, 0));
     i = (int)SendMessageW(d->cb[R_DEDITH], CB_GETCURSEL, 0, 0); c->dedither = i <= 0 ? -1 : i - 1;
+    c->intscale = untri((int)SendMessageW(d->cb[R_INTSC], CB_GETCURSEL, 0, 0));
+    i = (int)SendMessageW(d->cb[R_CRT], CB_GETCURSEL, 0, 0); c->crt = i <= 0 ? -1 : i - 1;
     c->vsync = untri((int)SendMessageW(d->cb[R_VSYNC], CB_GETCURSEL, 0, 0));
     i = (int)SendMessageW(d->cb[R_OVERSCAN], CB_GETCURSEL, 0, 0); c->overscan = i <= 0 || i > 7 ? -1 : kOverscan[i - 1];
     c->sound = untri((int)SendMessageW(d->cb[R_SOUND], CB_GETCURSEL, 0, 0));
@@ -298,18 +306,21 @@ int dlg_game_settings(HWND owner, const Game *g) {
         static const wchar_t *aspItems[] = {L"Same As Global", L"Stretch To Window", L"4:3", L"16:9", L"Pixel Perfect"};
         static const wchar_t *ditItems[] = {L"Same As Global", L"Off", L"Low", L"Medium", L"High"};
         static const wchar_t *ovItems[] = {L"Same As Global", L"Off", L"4 Pixels", L"8 Pixels", L"12 Pixels", L"16 Pixels", L"24 Pixels", L"32 Pixels"};
+        static const wchar_t *crtItems[] = {L"Same As Global", L"Off", L"Light", L"Classic", L"Curved"};
         int ov = 0, k;
         for (k = 0; k < 7; k++) if (d.cfg.overscan == kOverscan[k]) ov = k + 1;
         add_row(&md, &d, R_FSMODE, 1, 0, L"Fullscreen Mode", fsItems, 3, d.cfg.borderless < 0 ? 0 : d.cfg.borderless + 1);
         add_row(&md, &d, R_ASPECT, 1, 1, L"Aspect Ratio", aspItems, 5, d.cfg.aspect < 0 ? 0 : d.cfg.aspect + 1);
-        add_row(&md, &d, R_SCALE, 1, 2, L"Internal Resolution", scaleItems, 6, d.cfg.scale < 0 ? 0 : d.cfg.scale + 1);
-        add_row(&md, &d, R_XBRZ, 1, 3, L"xBRZ Filter", xbrzItems, 4, d.cfg.xbrz < 0 ? 0 : d.cfg.xbrz + 1);
-        add_row(&md, &d, R_TEXSM, 1, 4, L"3D Texture Smoothing", triItems, 3, tri(d.cfg.texsmooth));
-        add_row(&md, &d, R_FXAA, 1, 5, L"FXAA Filter", triItems, 3, tri(d.cfg.fxaa));
-        add_row(&md, &d, R_DEDITH, 1, 6, L"Dither Smoothing", ditItems, 5, d.cfg.dedither < 0 ? 0 : d.cfg.dedither + 1);
-        add_row(&md, &d, R_VSYNC, 1, 7, L"V-Sync", triItems, 3, tri(d.cfg.vsync));
-        add_row(&md, &d, R_OVERSCAN, 1, 8, L"Overscan Crop", ovItems, 8, ov);
-        add_row(&md, &d, R_SLOW, 1, 9, L"Slow Geometry", triItems, 3, tri(d.cfg.slowGeometry));
+        add_row(&md, &d, R_INTSC, 1, 2, L"Integer Scaling", triItems, 3, tri(d.cfg.intscale));
+        add_row(&md, &d, R_SCALE, 1, 3, L"Internal Resolution", scaleItems, 6, d.cfg.scale < 0 ? 0 : d.cfg.scale + 1);
+        add_row(&md, &d, R_XBRZ, 1, 4, L"xBRZ Filter", xbrzItems, 4, d.cfg.xbrz < 0 ? 0 : d.cfg.xbrz + 1);
+        add_row(&md, &d, R_TEXSM, 1, 5, L"3D Texture Smoothing", triItems, 3, tri(d.cfg.texsmooth));
+        add_row(&md, &d, R_FXAA, 1, 6, L"FXAA Filter", triItems, 3, tri(d.cfg.fxaa));
+        add_row(&md, &d, R_DEDITH, 1, 7, L"Dither Smoothing", ditItems, 5, d.cfg.dedither < 0 ? 0 : d.cfg.dedither + 1);
+        add_row(&md, &d, R_CRT, 1, 8, L"CRT Look", crtItems, 5, d.cfg.crt < 0 ? 0 : d.cfg.crt + 1);
+        add_row(&md, &d, R_VSYNC, 1, 9, L"V-Sync", triItems, 3, tri(d.cfg.vsync));
+        add_row(&md, &d, R_OVERSCAN, 1, 10, L"Overscan Crop", ovItems, 8, ov);
+        add_row(&md, &d, R_SLOW, 1, 11, L"Slow Geometry", triItems, 3, tri(d.cfg.slowGeometry));
     }
     {   /* the bezel: the settings' one (or bezels\<set>.png), none, or a PNG of the bezels folder */
         WIN32_FIND_DATAW fd;
@@ -355,7 +366,7 @@ int dlg_game_settings(HWND owner, const Game *g) {
     run_modal(&md);
     changed = md.changed;
     if (changed) {
-        if (gamecfg_active(&d.cfg)) gamecfg_set(&d.cfg); else gamecfg_remove(g->id);
+        if (gamecfg_active(&d.cfg)) gamecfg_set(&d.cfg); else { gamecfg_remove(g->id); game_files_clear(g->id); }
         gamecfg_save();
     }
     return changed;

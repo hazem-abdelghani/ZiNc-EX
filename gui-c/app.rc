@@ -3,8 +3,8 @@
 2 ICON "icon.ico"
 
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
 {
   BLOCK "StringFileInfo"
   {
@@ -12,11 +12,11 @@ PRODUCTVERSION 1,0,0,0
     {
       VALUE "CompanyName", "Hazem Abdelghani"
       VALUE "FileDescription", "ZiNc EX - a launcher for the ZiNc arcade emulator"
-      VALUE "FileVersion", "1.0.0"
+      VALUE "FileVersion", "1.1.0"
       VALUE "InternalName", "ZiNc-EX"
       VALUE "OriginalFilename", "ZiNc-EX.exe"
       VALUE "ProductName", "ZiNc EX"
-      VALUE "ProductVersion", "1.0.0"
+      VALUE "ProductVersion", "1.1.0"
     }
   }
   BLOCK "VarFileInfo"

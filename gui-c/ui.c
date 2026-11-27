@@ -18,7 +18,9 @@ void wide_from_ascii(const char *s, wchar_t *out, int cap) {
 }
 
 HWND mk(HWND parent, const wchar_t *cls, const wchar_t *text, DWORD style, DWORD ex, int id) {
-    HWND h = CreateWindowExW(ex, cls, text, style | WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, parent, (HMENU)(INT_PTR)id, g_inst, NULL);
+    HWND h;
+    if (g_dark && !_wcsicmp(cls, L"COMBOBOX")) style |= CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;   /* the dark theme draws the items itself (th_combo_item) */
+    h = CreateWindowExW(ex, cls, text, style | WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, parent, (HMENU)(INT_PTR)id, g_inst, NULL);
     if (h) { SendMessageW(h, WM_SETFONT, (WPARAM)g_font, TRUE); th_control(h, cls); }
     return h;
 }
@@ -253,6 +255,8 @@ static LRESULT CALLBACK modal_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             }
         }
         return 0;
+    case WM_DRAWITEM: if (th_combo_item((const DRAWITEMSTRUCT *)l)) return TRUE; break;
+    case WM_MEASUREITEM: if (th_combo_measure((MEASUREITEMSTRUCT *)l)) return TRUE; break;
     case WM_CTLCOLOREDIT: case WM_CTLCOLORBTN: case WM_CTLCOLORLISTBOX:
         if (g_dark) return (LRESULT)th_ctlcolor(m, (HDC)w, (HWND)l, 0);
         break;

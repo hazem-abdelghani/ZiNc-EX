@@ -9,12 +9,11 @@ const unsigned char *embedded_d3d11(size_t *n);
 const unsigned char *embedded_renderer_cfg(size_t *n);
 
 /* ---------------------------------------------------------------- key / value map (renderer.cfg values) */
-int kv_has(const KVMap *m, const char *key) { int i; for (i = 0; i < m->n; i++) if (!strcmp(m->kv[i].key, key)) return 1; return 0; }
 int kv_get(const KVMap *m, const char *key) { int i; for (i = 0; i < m->n; i++) if (!strcmp(m->kv[i].key, key)) return m->kv[i].val; return 0; }
 void kv_set(KVMap *m, const char *key, int v) {
     int i;
     for (i = 0; i < m->n; i++) if (!strcmp(m->kv[i].key, key)) { m->kv[i].val = v; return; }
-    if (m->n < 48) { strncpy(m->kv[m->n].key, key, 31); m->kv[m->n].key[31] = 0; m->kv[m->n++].val = v; }
+    if (m->n < (int)(sizeof m->kv / sizeof m->kv[0])) { strncpy(m->kv[m->n].key, key, 31); m->kv[m->n].key[31] = 0; m->kv[m->n++].val = v; }
 }
 
 /* ---------------------------------------------------------------- theme */
@@ -47,11 +46,11 @@ void settings_defaults(Settings *s, const Settings *keep) {
     wcscpy(n.trainer, L"trainer\\ZiNc 1.1 Trainer.exe");   /* the usual place of the trainer, beside the launcher (a relative path is taken from the launcher folder) */
     n.sortCol = 1; n.sortAsc = 1;
     n.colsHidden = 8 | 64;   /* Info and Year are hidden by default */
-    n.hideSearch = n.hideFilters = 1;   /* the search bar and the filter bar are off by default */
+    n.hideSearch = n.hideFilters = 1; n.hideStatus = 0; n.toolbarLabels = 1;   /* the search bar and the filter bar are off by default */
     n.optWindow = 1;   /* the settings are in a window of their own by default */
     if (keep) {
         n.colsHidden = keep->colsHidden; n.optWindow = keep->optWindow;
-        n.themeMode = keep->themeMode; n.hideSearch = keep->hideSearch; n.hideFilters = keep->hideFilters; n.hideToolbar = keep->hideToolbar;
+        n.themeMode = keep->themeMode; n.hideSearch = keep->hideSearch; n.hideFilters = keep->hideFilters; n.hideToolbar = keep->hideToolbar; n.hideStatus = keep->hideStatus; n.toolbarLabels = keep->toolbarLabels;
         wcscpy(n.roms, keep->roms);
         n.onlyAvail = keep->onlyAvail; n.favOnly = keep->favOnly;
         n.sortCol = keep->sortCol; n.sortAsc = keep->sortAsc;
@@ -153,6 +152,8 @@ void settings_load(void) {
         else if (!strcmp(key, "search_bar")) g_set.hideSearch = !strcmp(val, "0");
         else if (!strcmp(key, "filters_bar")) g_set.hideFilters = !strcmp(val, "0");
         else if (!strcmp(key, "toolbar")) g_set.hideToolbar = !strcmp(val, "0");
+        else if (!strcmp(key, "status_bar")) g_set.hideStatus = !strcmp(val, "0");
+        else if (!strcmp(key, "toolbar_labels")) g_set.toolbarLabels = !strcmp(val, "1");
         else if (!strcmp(key, "favorites_only")) g_set.favOnly = !strcmp(val, "1");
         else if (!strcmp(key, "filter_region")) { wchar_t *w = u8_to_w(val, -1); wcsncpy(g_set.fRegion, w, 7); free(w); }
         else if (!strcmp(key, "filter_maker")) { wchar_t *w = u8_to_w(val, -1); wcsncpy(g_set.fMaker, w, 39); free(w); }
@@ -211,7 +212,7 @@ int settings_save(void) {
         else buf_fmt(&b, "%s=%d\r\n", f[i].key, *(int *)f[i].p != 0 && f[i].kind == 2 ? 1 : *(int *)f[i].p);
     }
     if (g_winRect.w > 0) buf_fmt(&b, "window_x=%d\r\nwindow_y=%d\r\nwindow_w=%d\r\nwindow_h=%d\r\n", g_winRect.x, g_winRect.y, g_winRect.w, g_winRect.h);
-    buf_fmt(&b, "options_window=%d\r\ntheme_mode=%d\r\nsearch_bar=%d\r\nfilters_bar=%d\r\ntoolbar=%d\r\n", g_set.optWindow != 0, g_set.themeMode, !g_set.hideSearch, !g_set.hideFilters, !g_set.hideToolbar);
+    buf_fmt(&b, "options_window=%d\r\ntheme_mode=%d\r\nsearch_bar=%d\r\nfilters_bar=%d\r\ntoolbar=%d\r\nstatus_bar=%d\r\ntoolbar_labels=%d\r\n", g_set.optWindow != 0, g_set.themeMode, !g_set.hideSearch, !g_set.hideFilters, !g_set.hideToolbar, !g_set.hideStatus, g_set.toolbarLabels != 0);
     if (g_optRect.w > 0) buf_fmt(&b, "optwin_x=%d\r\noptwin_y=%d\r\noptwin_w=%d\r\noptwin_h=%d\r\n", g_optRect.x, g_optRect.y, g_optRect.w, g_optRect.h);
     buf_fmt(&b, "favorites_only=%d\r\nsort_column=%d\r\nsort_ascending=%d\r\n", g_set.favOnly != 0, g_set.sortCol, g_set.sortAsc != 0);
     { char *u;
@@ -251,7 +252,7 @@ void renderer_defaults(KVMap *m) {
     static const struct { const char *k; int v; } d[] = {
         {"XSize", 640}, {"YSize", 480},   /* (replaced by the desktop size below) */ {"FullScreen", 1}, {"ColorDepth", 32}, {"ScanLines", 0}, {"Filtering", 3},
         {"Blending", 1}, {"Dithering", 0}, {"ShowFPS", 0}, {"FrameLimitation", 1}, {"FrameSkipping", 0},
-        {"FramerateDetection", 1}, {"FramerateManual", 60}, {"TextureType", 3}, {"TextureCaching", 2}, {"InternalScale", 0}, {"XBRZ", 2}, {"FXAA", 1}, {"TextureSmoothing", 1}, {"Overscan", 0}, {"KeepAspect", 1}, {"Dedither", 3}, {"VSync", 0}, {"Borderless", 1}};
+        {"FramerateDetection", 1}, {"FramerateManual", 60}, {"TextureType", 3}, {"TextureCaching", 2}, {"InternalScale", 0}, {"XBRZ", 2}, {"FXAA", 1}, {"TextureSmoothing", 1}, {"Overscan", 0}, {"KeepAspect", 1}, {"Dedither", 3}, {"CRT", 0}, {"IntegerScale", 0}, {"VSync", 0}, {"Borderless", 1}};
     size_t i;
     memset(m, 0, sizeof *m);
     for (i = 0; i < sizeof d / sizeof d[0]; i++) kv_set(m, d[i].k, d[i].v);
@@ -328,8 +329,8 @@ static const wchar_t *g_bezelOverride;   /* the bezel of one game, for the copy 
 static void write_cfg_to(const wchar_t *dst, const KVMap *values) {
     char *txt = read_file(g_rendererCfg, NULL), *line;
     Buf out = {0};
-    char seen[48] = {0};
-    KV sorted[48];
+    char seen[KV_CAP] = {0};
+    KV sorted[KV_CAP];
     int i;
     if (txt) {
         char *cur = txt;
@@ -377,6 +378,8 @@ static void write_cfg_to(const wchar_t *dst, const KVMap *values) {
                 {"KeepAspect", "Direct3D 11 only: picture shape: 0=stretch to the window, 1=4:3, 2=16:9, 3=pixel perfect (whole-number size)"},
                 {"VSync", "Direct3D 11 only: wait for the screen refresh before showing a frame (no tearing): 0=off, 1=on"},
                 {"Borderless", "Direct3D 11 only: fullscreen as a borderless window over the desktop, the screen mode is not changed: 0=off, 1=on"},
+                {"CRT", "Direct3D 11 only: CRT look preset: 0=off, 1=light scanlines, 2=classic (scanlines and phosphor mask), 3=curved screen (also bulges the screen and darkens the corners)"},
+                {"IntegerScale", "Direct3D 11 only: 1 = the picture height is a whole number times the console picture (even scanlines); not used with Aspect Ratio pixel perfect"},
                 {"Dedither", "Direct3D 11 only: smooths the checkerboard dither pattern in the picture: 0=off, 1=low, 2=medium, 3=high"},
                 {"Logging", "Direct3D 11 only: write zinc-d3d11.log: 0/1"},
             };
@@ -497,6 +500,25 @@ static void game_dir(wchar_t *out, size_t cap) {
     CreateDirectoryW(out, NULL);
 }
 
+/* the generated config copies of a game (game-settings\<id>-*.cfg) are deleted, except the one of its desktop icon: the game follows the main settings again */
+void game_files_clear(int id) {
+    wchar_t dir[560], pat[600], f[640];
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    path_join(dir, 560, g_root, L"game-settings");
+    _snwprintf(pat, 600, L"%ls\\%d-*.cfg", dir, id); pat[599] = 0;
+    h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        { size_t l = wcslen(fd.cFileName); if (l > 9 && !_wcsicmp(fd.cFileName + l - 9, L"-icon.cfg")) continue; }   /* desktop icons point at the "-icon" copy: it stays */
+        _snwprintf(f, 640, L"%ls\\%ls", dir, fd.cFileName); f[639] = 0;
+        DeleteFileW(f);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    RemoveDirectoryW(dir);   /* only when it is empty now */
+}
+
 /* the command line of a game: the main settings, changed by the settings of the game itself (zinc-games.cfg) and by the one-off
    options of this start (PlayOpts). Changed renderer.cfg values go into a copy of the file for this game. */
 /* the bezel of a game: bezels\<set>.png, else bezels\<parent set>.png (next to ZiNc.exe); "" when there is none */
@@ -556,6 +578,16 @@ void zinc_args_ex(int id, const PlayOpts *po, ArgList *a, wchar_t *warn, size_t 
         if (gc->fxaa >= 0) kv_set(&ov, "FXAA", gc->fxaa);
         if (gc->texsmooth >= 0) kv_set(&ov, "TextureSmoothing", gc->texsmooth);
         if (gc->dedither >= 0) kv_set(&ov, "Dedither", gc->dedither);
+        if (gc->crt >= 0) kv_set(&ov, "CRT", gc->crt);
+        if (gc->crt == 0) {   /* the global CRT Look is on: the Scanlines box is greyed there, so its value is not a choice: no scanlines for this game either */
+            KVMap gl;
+            wchar_t keepBez[520];
+            wcscpy(keepBez, g_bezelPath);   /* renderer_read also reads the bezel path: not to be lost */
+            renderer_read(&gl);
+            wcscpy(g_bezelPath, keepBez);
+            if (kv_get(&gl, "CRT") > 0) kv_set(&ov, "ScanLines", 0);
+        }
+        if (gc->intscale >= 0) kv_set(&ov, "IntegerScale", gc->intscale);
         if (gc->vsync >= 0) kv_set(&ov, "VSync", gc->vsync);
         if (gc->overscan >= 0) kv_set(&ov, "Overscan", gc->overscan);
     }
@@ -602,7 +634,7 @@ void zinc_args_ex(int id, const PlayOpts *po, ArgList *a, wchar_t *warn, size_t 
                     Buf b = {0};
                     input_cfg_text_profile(&b, prof);
                     game_dir(gd, 560);
-                    _snwprintf(tmp, 600, L"%ls\\%d-input.cfg", gd, id);
+                    _snwprintf(tmp, 600, L"%ls\\%d-input%ls.cfg", gd, id, po && po->tag ? po->tag : L"");   /* tagged like the renderer copy: a desktop icon keeps its own */
                     tmp[599] = 0;
                     write_file(tmp, b.s, b.n);
                     buf_free(&b);
@@ -614,20 +646,36 @@ void zinc_args_ex(int id, const PlayOpts *po, ArgList *a, wchar_t *warn, size_t 
     }
 }
 
-/* a command line the way the C runtime of ZiNc parses it: arguments with blanks are quoted as a whole */
-static wchar_t *command_line(const wchar_t *exe, const ArgList *a) {
-    size_t cap = wcslen(exe) + 8, i;
-    wchar_t *cl;
-    for (i = 0; (int)i < a->n; i++) cap += wcslen(a->a[i]) + 4;
-    cl = (wchar_t *)malloc(cap * sizeof(wchar_t));
-    _snwprintf(cl, cap, L"\"%ls\"", exe);
-    for (i = 0; (int)i < a->n; i++) {
-        int blank = wcschr(a->a[i], L' ') || wcschr(a->a[i], L'\t');
-        wcscat(cl, L" ");
-        if (blank) wcscat(cl, L"\"");
-        wcscat(cl, a->a[i]);
-        if (blank) wcscat(cl, L"\"");
+/* one argument the way the C runtime of ZiNc reads it: quoted when it has a blank or a quote; a quote inside gets a backslash,
+   and the backslashes in front of a quote (or of the closing quote) are doubled */
+static wchar_t *append_arg(wchar_t *d, const wchar_t *s) {
+    int q = !*s || wcschr(s, L' ') || wcschr(s, L'\t') || wcschr(s, L'"');
+    if (!q) { while (*s) *d++ = *s++; return d; }
+    *d++ = L'"';
+    for (;;) {
+        int bs = 0;
+        while (*s == L'\\') { s++; bs++; }
+        if (!*s) { while (bs--) { *d++ = L'\\'; *d++ = L'\\'; } break; }
+        if (*s == L'"') { while (bs--) { *d++ = L'\\'; *d++ = L'\\'; } *d++ = L'\\'; *d++ = *s++; }
+        else { while (bs--) *d++ = L'\\'; *d++ = *s++; }
     }
+    *d++ = L'"';
+    return d;
+}
+
+/* a command line the way the C runtime of ZiNc parses it */
+static wchar_t *command_line(const wchar_t *exe, const ArgList *a) {
+    size_t cap = wcslen(exe) + 8;
+    wchar_t *cl, *d;
+    int i;
+    for (i = 0; i < a->n; i++) cap += 2 * wcslen(a->a[i]) + 4;
+    cl = (wchar_t *)malloc(cap * sizeof(wchar_t));
+    d = cl;
+    *d++ = L'"';
+    while (*exe) *d++ = *exe++;
+    *d++ = L'"';
+    for (i = 0; i < a->n; i++) { *d++ = L' '; d = append_arg(d, a->a[i]); }
+    *d = 0;
     return cl;
 }
 
@@ -712,6 +760,7 @@ int run_game_cli(const wchar_t *game, int fullscreen) {   /* fullscreen: -1 as s
     if (!game || !game[0]) { cli_log(L"no game given", L""); return 5; }
     if (!file_exists(g_exePath)) { cli_log(L"ZiNc.exe not found beside ZiNc-EX.exe", g_exePath); return 4; }
     if (games_fetch(&g_games, &g_ngames) != 0 || g_ngames <= 0) { cli_log(L"could not read the game list of ZiNc.exe", g_exePath); return 4; }
+    { KVMap rc; renderer_read(&rc); }   /* loads the bezel of the settings: a per-game copy of renderer.cfg is written from it */
     g = cli_find_game(game);
     if (!g) { cli_log(L"unknown game (use the ZiNc set name, e.g. sfex, or the ROM zip)", game); return 2; }
     rom_available_init(g_set.roms);
@@ -728,7 +777,7 @@ int run_game_cli(const wchar_t *game, int fullscreen) {   /* fullscreen: -1 as s
     zinc_args_ex(g->id, &po, &a, warn, 300);
     AllowSetForegroundWindow((DWORD)-1);
     if (!zinc_start(&a, &pi)) { cli_log(L"ZiNc.exe could not be started", g_exePath); args_free(&a); return 4; }
-    CreateThread(NULL, 0, focus_thread, (LPVOID)(size_t)pi.dwProcessId, 0, NULL);
+    CloseHandle(CreateThread(NULL, 0, focus_thread, (LPVOID)(size_t)pi.dwProcessId, 0, NULL));
     WaitForSingleObject(pi.hProcess, INFINITE);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -744,8 +793,8 @@ void run_headless(int id, int fullscreen) {
     int restore = 0;
     KVMap m;
     Buf log = {0};
+    renderer_read(&m);   /* also the bezel of the settings, for a per-game copy of renderer.cfg */
     if (fullscreen) {
-        renderer_read(&m);
         if (kv_get(&m, "FullScreen") == 0) {
             KVMap w = {0};
             kv_set(&w, "FullScreen", 1);
@@ -767,7 +816,7 @@ void run_headless(int id, int fullscreen) {
     buf_free(&log);
     AllowSetForegroundWindow((DWORD)-1);
     if (zinc_start(&a, &pi)) {
-        CreateThread(NULL, 0, focus_thread, (LPVOID)(size_t)pi.dwProcessId, 0, NULL);
+        CloseHandle(CreateThread(NULL, 0, focus_thread, (LPVOID)(size_t)pi.dwProcessId, 0, NULL));
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);

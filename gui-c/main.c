@@ -5,8 +5,6 @@
 #include <commdlg.h>
 #include "classify.h"
 
-static const wchar_t *REPO = L"https://github.com/hazem-abdelghani/ZiNc-EX";
-
 enum { PG_SYSTEM, PG_VIDEO, PG_AUDIO, PG_CONTROLS, PG_COMBOS, NPAGES };   /* the tabs of the right pane, in order */
 
 typedef struct { HWND lbl, ctl, btn, clr; int kind; } PRow;   /* kind 0: label + combo, 1: label + edit (btn: Browse, clr: X, to the right of it), 2: wide check box, 3: wide button */
@@ -15,10 +13,10 @@ typedef struct { HWND lbl, ctl, btn, clr; int kind; } PRow;   /* kind 0: label +
 static struct {
     HWND status, tip, tab, page[NPAGES];
     HWND cbRegion, cbMaker, cbGenre;
-    HWND lblSearch, search, clearBtn, sortBtn, lv, favOnly, iconBtn, stopBtn, playBtn, saveBtn, cancelBtn, defBtn;
+    HWND lblSearch, lblFilters, search, clearBtn, sortBtn, lv, favOnly, iconBtn, stopBtn, playBtn, saveBtn, cancelBtn, defBtn;
     /* video */
     HWND cbRenderer, cbRes, cbRot, cbScale, cbXbrz, cbDepth, lblDepth, lblFPS, tbRefresh, tbFav, tbAvail, tbFs, tbSet, tbVideo, tbAudio, tbCtl, tbCmb, tbSep1, tbSep2, lblFilter, lblTexType, lblTexCache, lblBlend, cbScan, cbFilter, cbTexType, cbTexCache, cbBlend, eFPS;
-    HWND chFull, chDither, chFPS, chLimit, chSkip, chAuto, lblScale, lblXbrz, cbFxaa, cbOnStart, lblFxaa, cbTexSm, lblTexSm, cbDedith, lblDedith, cbAspect, lblAspect, cbOverscan, lblOverscan, chClassic, cbTheme, eBezel, bBezBrowse, bBezClear, cbFsMode, lblFsMode, cbVsync, lblVsync;
+    HWND chFull, chDither, chFPS, chLimit, chSkip, chAuto, lblScale, lblXbrz, cbFxaa, lblScan, cbCrt, lblCrt, cbIntScale, lblIntScale, cbOnStart, lblFxaa, cbTexSm, lblTexSm, cbDedith, lblDedith, cbAspect, lblAspect, cbOverscan, lblOverscan, chClassic, cbTheme, eBezel, bBezBrowse, bBezClear, cbFsMode, lblFsMode, cbVsync, lblVsync;
     /* audio */
     HWND chSound, chFilt, eCutoff, chSurr, eSurround, chExc;
     /* system */
@@ -31,7 +29,7 @@ typedef struct { int w, h; } Mode;
 static Mode *g_modes;
 static int g_nmodes;
 
-static int g_applying, g_syncing, g_rebuilding;
+static int g_applying, g_rebuilding;
 static char *g_savedSig;
 static PROCESS_INFORMATION g_proc;
 static void sync_main_enable(void);
@@ -41,7 +39,8 @@ static DWORD g_startTick;
 static int g_splitX, g_dragging;
 static HWND g_opt;            /* the options window (the tabs in a window of their own) */
 static HMENU g_optsMenu;      /* the Options menu of the menu bar */
-static HMENU g_viewMenu, g_themeMenu, g_colsMenu;
+static HMENU g_viewMenu, g_themeMenu, g_colsMenu, g_toolbarsMenu;
+static int g_tbH = 32;        /* height of the toolbar buttons */
 static int g_searchOv = -1;   /* for this session only: 1 the search bar was shown by Ctrl+F, 0 it was closed with Close; -1 as in the View menu (remembered) */
 #define SEARCH_SHOWN() (g_searchOv >= 0 ? g_searchOv : !g_set.hideSearch)
 static int g_optWin;          /* 1: the tabs are in the options window, 0: in the main window (the classic layout) */
@@ -204,7 +203,31 @@ static void apply_columns(void) {
     }
 }
 
-/* right-click on the title of the list: which columns are shown */
+/* "Size All Columns to Fit": every shown column gets the width of its header and content (not below the minimum); hidden columns stay hidden */
+static void size_all_columns(void) {
+    int k;
+    SendMessageW(W.lv, WM_SETREDRAW, FALSE, 0);
+    for (k = 0; k < NCOLS; k++) {
+        int w, mn;
+        if ((g_set.colsHidden >> k) & 1) continue;
+        mn = lv_min_w(W.lv, k);
+        ListView_SetColumnWidth(W.lv, k, LVSCW_AUTOSIZE);   /* the content only: USEHEADER would make the last column fill the list */
+        w = ListView_GetColumnWidth(W.lv, k);
+        {   /* a column of icons only (Status, Favorite) fits its icon, but its title must stay readable, with room for the sort arrow */
+            HDC dc = GetDC(W.lv);
+            HGDIOBJ old = SelectObject(dc, g_font);
+            SIZE sz;
+            if (GetTextExtentPoint32W(dc, kColNames[k], (int)wcslen(kColNames[k]), &sz) && sz.cx + S(28) > w) w = sz.cx + S(28);   /* the header text, with room for the sort arrow */
+            SelectObject(dc, old);
+            ReleaseDC(W.lv, dc);
+        }
+        ListView_SetColumnWidth(W.lv, k, w < mn ? mn : w);
+    }
+    SendMessageW(W.lv, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(W.lv, NULL, NULL, RDW_INVALIDATE | RDW_ALLCHILDREN);   /* the widths are saved with the window */
+}
+
+/* right-click on the title of the list: which columns are shown (and Size All Columns to Fit) */
 static LRESULT CALLBACK colhdr_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR id, DWORD_PTR ref) {
     (void)id; (void)ref;
     if (m == WM_RBUTTONUP) {
@@ -212,6 +235,8 @@ static LRESULT CALLBACK colhdr_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR
         POINT pt = {(short)LOWORD(l), (short)HIWORD(l)};
         int k;
         for (k = 0; k < NCOLS; k++) { int c = kColOrder[k]; AppendMenuW(pm, MF_STRING | (c == 2 ? MF_GRAYED : 0) | (((g_set.colsHidden >> c) & 1) ? 0 : MF_CHECKED), ID_COL0 + c, kColNames[c]); }   /* Game always stays */
+        AppendMenuW(pm, MF_SEPARATOR, 0, NULL);
+        AppendMenuW(pm, MF_STRING, ID_M_SIZECOLS, L"Size All Columns to Fit");
         ClientToScreen(h, &pt);
         TrackPopupMenu(pm, TPM_RIGHTBUTTON, pt.x, pt.y, 0, g_main, NULL);
         DestroyMenu(pm);
@@ -223,6 +248,13 @@ static LRESULT CALLBACK colhdr_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR
 /* the title notifies the list: a hidden column cannot be dragged open */
 static LRESULT CALLBACK lvhdr_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR id, DWORD_PTR ref) {
     (void)id; (void)ref;
+    if (m == WM_SETCURSOR && LOWORD(l) == HTCLIENT) {   /* a hand over the star of the Favorite column: a click there sets or clears the favorite */
+        LVHITTESTINFO ht;
+        memset(&ht, 0, sizeof ht);
+        GetCursorPos(&ht.pt);
+        ScreenToClient(h, &ht.pt);
+        if (ListView_SubItemHitTest(h, &ht) >= 0 && ht.iSubItem == 0 && (ht.flags & LVHT_ONITEMSTATEICON)) { SetCursor(LoadCursorW(NULL, IDC_HAND)); return TRUE; }
+    }
     if (m == WM_NOTIFY) {
         NMHEADERW *nh = (NMHEADERW *)l;
         if ((nh->hdr.code == HDN_BEGINTRACKW || nh->hdr.code == HDN_BEGINTRACKA || nh->hdr.code == HDN_DIVIDERDBLCLICKW || nh->hdr.code == HDN_DIVIDERDBLCLICKA) &&
@@ -378,8 +410,6 @@ static void refilter(void) {
 /* ---------------------------------------------------------------- settings <-> widgets */
 static void renderer_index_fill(void) {
     int i;
-    wchar_t sel[64] = L"";
-    if (W.cbRenderer && SendMessageW(W.cbRenderer, CB_GETCURSEL, 0, 0) >= 0) wcscpy(sel, g_rendNames[SendMessageW(W.cbRenderer, CB_GETCURSEL, 0, 0)]);
     g_nrend = renderer_names(g_rendNames, 16);
     SendMessageW(W.cbRenderer, CB_RESETCONTENT, 0, 0);
     for (i = 0; i < g_nrend; i++) SendMessageW(W.cbRenderer, CB_ADDSTRING, 0, (LPARAM)g_rendNames[i]);
@@ -402,6 +432,8 @@ static void update_renderer(void) {
     enable_ctl(W.chDither, !on);   /* the Direct3D 11 renderer does not dither: it has Dither Smoothing instead */
     enable_ctl(W.cbScale, on); enable_ctl(W.cbXbrz, on); enable_ctl(W.lblScale, on); enable_ctl(W.lblXbrz, on);
     enable_ctl(W.cbFxaa, on); enable_ctl(W.lblFxaa, on);
+    { BOOL crtOn = on && SendMessageW(W.cbCrt, CB_GETCURSEL, 0, 0) > 0; enable_ctl(W.cbScan, !crtOn); enable_ctl(W.lblScan, !crtOn); }   /* a CRT Look draws its own scanlines */
+    enable_ctl(W.cbCrt, on); enable_ctl(W.lblCrt, on); enable_ctl(W.cbIntScale, on); enable_ctl(W.lblIntScale, on);
     enable_ctl(W.cbTexSm, on); enable_ctl(W.lblTexSm, on);
     enable_ctl(W.cbAspect, on); enable_ctl(W.lblAspect, on);
     enable_ctl(W.cbOverscan, on); enable_ctl(W.lblOverscan, on);
@@ -492,6 +524,8 @@ static void apply_to_ui(const KVMap *forced) {
     set_combo(W.cbFsMode, kv_get(&r, "Borderless") ? 1 : 0);
     set_combo(W.cbVsync, kv_get(&r, "VSync") ? 1 : 0);
     set_combo(W.cbDedith, kv_get(&r, "Dedither"));
+    { int c = kv_get(&r, "CRT"); set_combo(W.cbCrt, c < 0 || c > 3 ? 0 : c); }
+    set_combo(W.cbIntScale, kv_get(&r, "IntegerScale") ? 1 : 0);
     set_combo(W.cbTexCache, kv_get(&r, "TextureCaching"));
     set_combo(W.cbBlend, kv_get(&r, "Blending"));
     renderer_index_fill();
@@ -581,6 +615,8 @@ static void gather(KVMap *m) {
         kv_set(m, "Borderless", (int)SendMessageW(W.cbFsMode, CB_GETCURSEL, 0, 0) == 1);
         kv_set(m, "VSync", (int)SendMessageW(W.cbVsync, CB_GETCURSEL, 0, 0) == 1);
         kv_set(m, "Dedither", (int)SendMessageW(W.cbDedith, CB_GETCURSEL, 0, 0));
+        kv_set(m, "CRT", (int)SendMessageW(W.cbCrt, CB_GETCURSEL, 0, 0));
+        kv_set(m, "IntegerScale", (int)SendMessageW(W.cbIntScale, CB_GETCURSEL, 0, 0) == 1);
         kv_set(m, "Logging", g_set.logs);
     }
 }
@@ -778,6 +814,7 @@ static void browse_roms(void) {
         if (SHGetPathFromIDListW(pidl, path)) { SetWindowTextW(W.eRoms, path); refilter(); }
         CoTaskMemFree(pidl);
     }
+    CoUninitialize();
 }
 
 static void desktop_icon(void) {
@@ -1079,7 +1116,8 @@ static void apply_bars(void) {
         for (k = 0; k < (int)(sizeof tb / sizeof tb[0]); k++) ShowWindow(tb[k], t);
     }
     ShowWindow(W.lblSearch, s); ShowWindow(W.search, s); ShowWindow(W.clearBtn, s);
-    ShowWindow(W.cbRegion, f); ShowWindow(W.cbMaker, f); ShowWindow(W.cbGenre, f); ShowWindow(W.sortBtn, f);
+    ShowWindow(W.status, g_set.hideStatus ? SW_HIDE : SW_SHOW);
+    ShowWindow(W.lblFilters, f); ShowWindow(W.cbRegion, f); ShowWindow(W.cbMaker, f); ShowWindow(W.cbGenre, f); ShowWindow(W.sortBtn, f);
 }
 
 /* the tab control with its pages and the save button, wherever they are (main window or options window): tab rectangle tx ty tw th, save button at sx sy */
@@ -1102,40 +1140,51 @@ static void layout_tabs(int tx, int ty, int tw, int th, int sx, int sy) {
     place(W.saveBtn, sx + S(120) - 2 * S(80) - S(8), sy, S(80), S(26));
 }
 
+/* the toolbar items, in order (NULL = a separator): the width of each and the whole toolbar */
+#define TB_N 13
+static const wchar_t *const g_tbCap[TB_N] = {L"Refresh", L"Favorites", L"Available", NULL, L"Play", L"Stop", L"Fullscreen", NULL, L"Settings", L"Video", L"Audio", L"Controls", L"Combos"};
+static int tb_item_w(int k) {
+    int bw = S(38);
+    if (!g_tbCap[k]) return S(16);
+    if (g_set.toolbarLabels) { int tw = text_width(g_main, g_tbCap[k]) + S(14); if (tw > bw) bw = tw; }
+    return bw;
+}
+static int tb_gap_after(int k) { return (k + 1 < TB_N && g_tbCap[k] && g_tbCap[k + 1]) ? S(2) : 0; }
+static int toolbar_total_w(void) {
+    int k, w = 0;
+    for (k = 0; k < TB_N; k++) w += tb_item_w(k) + tb_gap_after(k);
+    return w;
+}
+
 static void layout_opt(void);
 
 static void do_layout(void) {
     RECT rc, tr;
-    int cw, ch, sbh, m = S(8), gap = S(8), x, y, w, h, leftW, rightX, rightW, i, bh = S(26), by, ly;
+    int cw, ch, sbh, m = S(8), gap = S(8), x, y, leftW, rightX, rightW, bh = S(26), ly;
     GetClientRect(g_main, &rc);
     SendMessageW(W.status, WM_SIZE, 0, 0);
     GetWindowRect(W.status, &tr);
-    sbh = tr.bottom - tr.top;
+    sbh = g_set.hideStatus ? 0 : tr.bottom - tr.top;
     cw = rc.right; ch = rc.bottom - sbh;
     if (g_splitX <= 0 && g_set.splitX > 0) g_splitX = S(g_set.splitX);   /* the splitter of the last session */
     if (g_splitX <= 0) g_splitX = (cw - 2 * m - gap) - S(660) > S(360) ? (cw - 2 * m - gap) - S(660) : (cw - 2 * m - gap) * 3 / 5;   /* the tabs get 660 pixels (the Combos tab needs them), the list the rest */
     leftW = g_splitX;
     if (leftW < S(600)) leftW = S(600);   /* the toolbar is over the list */
+    if (!g_set.hideToolbar && leftW < 2 * S(8) + toolbar_total_w()) leftW = 2 * S(8) + toolbar_total_w();   /* with captions the toolbar is wider: the tabs start to the right of it */
     if (leftW > cw - 2 * m - gap - S(300)) leftW = cw - 2 * m - gap - S(300);
     g_splitX = leftW;
     if (g_optWin) leftW = cw - 2 * m;   /* the tabs are in the options window: the list has the whole width */
-    {   /* the toolbar: Refresh, Favorites Only | Play, Stop, Fullscreen | Settings, Video, Controls, Combos */
-        int bx = m, ty = m, bw = S(38), bh2 = S(32), g2 = S(2), sp = S(16);
-        place(W.tbRefresh, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbFav, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbAvail, bx, ty, bw, bh2); bx += bw;
-        place(W.tbSep1, bx, ty, sp, bh2); bx += sp;
-        place(W.playBtn, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.stopBtn, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbFs, bx, ty, bw, bh2); bx += bw;
-        place(W.tbSep2, bx, ty, sp, bh2); bx += sp;
-        place(W.tbSet, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbVideo, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbAudio, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbCtl, bx, ty, bw, bh2); bx += bw + g2;
-        place(W.tbCmb, bx, ty, bw, bh2);
+    {   /* the toolbar: Refresh, Favorites Only | Play, Stop, Fullscreen | Settings, Video, Controls, Combos (with a caption under each icon when View > Toolbars > Show Toolbar Labels is on) */
+        HWND tb[] = {W.tbRefresh, W.tbFav, W.tbAvail, W.tbSep1, W.playBtn, W.stopBtn, W.tbFs, W.tbSep2, W.tbSet, W.tbVideo, W.tbAudio, W.tbCtl, W.tbCmb};
+        int bx = m, ty = m, th = g_set.toolbarLabels ? S(52) : S(32), k;
+        for (k = 0; k < TB_N; k++) {
+            int bw = tb_item_w(k);
+            place(tb[k], bx, ty, bw, th);
+            bx += bw + tb_gap_after(k);
+        }
+        g_tbH = th;
     }
-    x = m; y = m + (g_set.hideToolbar ? 0 : S(40));
+    x = m; y = m + (g_set.hideToolbar ? 0 : g_tbH + S(8));
     /* left: search row, list, buttons */
     ly = y;   /* top of the list: below the search bar and the filters bar when they are shown */
     if (SEARCH_SHOWN()) {
@@ -1145,11 +1194,12 @@ static void do_layout(void) {
         ly += S(32);
     }
     if (!g_set.hideFilters) {
-        int cw = (leftW - S(96) - 2 * S(6)) / 3;
-        place(W.cbRegion, x, ly, cw, S(220));
-        place(W.cbMaker, x + cw + S(6), ly, cw, S(220));
-        place(W.cbGenre, x + 2 * (cw + S(6)), ly, cw, S(220));
-        place(W.sortBtn, x + leftW - S(90), ly - S(1), S(90), S(26));   /* Reset Filters */
+        int fx = x + S(54), cw = (leftW - S(54) - S(96) - 2 * S(6)) / 3;
+        place(W.lblFilters, x, ly + S(4), S(52), S(18));
+        place(W.cbRegion, fx, ly, cw, S(220));
+        place(W.cbMaker, fx + cw + S(6), ly, cw, S(220));
+        place(W.cbGenre, fx + 2 * (cw + S(6)), ly, cw, S(220));
+        place(W.sortBtn, x + leftW - S(90), ly - S(1), S(90), S(26));   /* Reset */
         ly += S(30);
     }
     place(W.lv, x, ly, leftW, ch - m - ly);
@@ -1214,6 +1264,8 @@ static LRESULT CALLBACK page_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         FillRect((HDC)w, &rc, th_page_brush());
         return 1;
     }
+    case WM_DRAWITEM: if (th_combo_item((const DRAWITEMSTRUCT *)l)) return TRUE; break;   /* the combo boxes of the dark theme */
+    case WM_MEASUREITEM: if (th_combo_measure((MEASUREITEMSTRUCT *)l)) return TRUE; break;
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORLISTBOX:
         if (g_dark) return (LRESULT)th_ctlcolor(m, (HDC)w, (HWND)l, 1);
@@ -1258,6 +1310,8 @@ static LRESULT CALLBACK opt_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         FillRect((HDC)w, &rc, th_face_brush());
         return 1;
     }
+    case WM_DRAWITEM: if (th_combo_item((const DRAWITEMSTRUCT *)l)) return TRUE; break;
+    case WM_MEASUREITEM: if (th_combo_measure((MEASUREITEMSTRUCT *)l)) return TRUE; break;
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORBTN: case WM_CTLCOLORLISTBOX:
         if (g_dark) return (LRESULT)th_ctlcolor(m, (HDC)w, (HWND)l, 0);
         break;
@@ -1356,6 +1410,7 @@ static void create_pages(void) {
     static const wchar_t *aspect[] = {L"Stretch To Window", L"4:3", L"16:9", L"Pixel Perfect"};
     static const wchar_t *fsmode[] = {L"Fullscreen", L"Borderless"};
     static const wchar_t *dedith[] = {L"Off", L"Low", L"Medium", L"High"};
+    static const wchar_t *crtLook[] = {L"Off", L"Light", L"Classic", L"Curved"};
     static const wchar_t *xbrz[] = {L"Off", L"All Graphics", L"2D Objects Only"};
     static const wchar_t *depth[] = {L"16-Bit", L"32-Bit"};
     static const wchar_t *scan[] = {L"Off", L"Black", L"Bright"};
@@ -1382,6 +1437,7 @@ static void create_pages(void) {
     W.cbRes = add_combo(p, W.vrows, &W.nv, L"Resolution", ID_V_RES, (const wchar_t **)resl, g_nmodes);
     W.cbRot = add_combo(p, W.vrows, &W.nv, L"Rotation", ID_V_ROT, rot, 5);
     W.cbScan = add_combo(p, W.vrows, &W.nv, L"Scanlines", ID_V_SCAN, scan, 3);
+    W.lblScan = W.vrows[W.nv - 1].lbl;
     W.eFPS = add_edit(p, W.vrows, &W.nv, L"Manual Framerate", ID_V_FPS, 1);
     W.lblFPS = W.vrows[W.nv - 1].lbl;
     W.chFull = add_check(p, W.vrows, &W.nv, L"Fullscreen", ID_V_FULL);
@@ -1395,6 +1451,8 @@ static void create_pages(void) {
     W.lblFsMode = W.vrows[W.nv - 1].lbl;
     W.cbAspect = add_combo(p, W.vrows, &W.nv, L"Aspect Ratio", ID_V_ASPECT, aspect, 4);
     W.lblAspect = W.vrows[W.nv - 1].lbl;
+    W.cbIntScale = add_combo(p, W.vrows, &W.nv, L"Integer Scaling", ID_V_INTSCALE, offon, 2);
+    W.lblIntScale = W.vrows[W.nv - 1].lbl;
     W.cbScale = add_combo(p, W.vrows, &W.nv, L"Internal Resolution", ID_V_SCALE, scale, 5);
     W.lblScale = W.vrows[W.nv - 1].lbl;
     W.cbXbrz = add_combo(p, W.vrows, &W.nv, L"xBRZ Filter", ID_V_XBRZ, xbrz, 3);
@@ -1405,6 +1463,8 @@ static void create_pages(void) {
     W.lblFxaa = W.vrows[W.nv - 1].lbl;
     W.cbDedith = add_combo(p, W.vrows, &W.nv, L"Dither Smoothing", ID_V_DEDITHER, dedith, 4);
     W.lblDedith = W.vrows[W.nv - 1].lbl;
+    W.cbCrt = add_combo(p, W.vrows, &W.nv, L"CRT Look", ID_V_CRT, crtLook, 4);
+    W.lblCrt = W.vrows[W.nv - 1].lbl;
     W.cbVsync = add_combo(p, W.vrows, &W.nv, L"V-Sync", ID_V_VSYNC, offon, 2);
     W.lblVsync = W.vrows[W.nv - 1].lbl;
     W.cbOverscan = add_combo(p, W.vrows, &W.nv, L"Overscan Crop", ID_V_OVERSCAN, overscan, 7);
@@ -1485,7 +1545,8 @@ static void create_ui(void) {
     SendMessageW(W.status, WM_SETFONT, (WPARAM)g_font, TRUE);
     W.lblSearch = mk(g_main, L"STATIC", L"Search:", SS_LEFT, 0, 0);
     W.search = mk(g_main, L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, ID_SEARCH);
-    W.sortBtn = mk(g_main, L"BUTTON", L"Reset Filters", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_RESETSORT);
+    W.lblFilters = mk(g_main, L"STATIC", L"Filters:", SS_LEFT, 0, 0);
+    W.sortBtn = mk(g_main, L"BUTTON", L"Reset", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_RESETSORT);
     W.clearBtn = mk(g_main, L"BUTTON", L"Close", BS_PUSHBUTTON | WS_TABSTOP, 0, ID_CLEARSEARCH);
     W.cbRegion = mk(g_main, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, ID_F_REGION);
     W.cbMaker = mk(g_main, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, ID_F_MAKER);
@@ -1493,7 +1554,7 @@ static void create_ui(void) {
     SendMessageW(W.cbRegion, CB_ADDSTRING, 0, (LPARAM)L"All Regions"); SendMessageW(W.cbRegion, CB_SETCURSEL, 0, 0);
     SendMessageW(W.cbMaker, CB_ADDSTRING, 0, (LPARAM)L"All Makers"); SendMessageW(W.cbMaker, CB_SETCURSEL, 0, 0);
     SendMessageW(W.cbGenre, CB_ADDSTRING, 0, (LPARAM)L"All Genres"); SendMessageW(W.cbGenre, CB_SETCURSEL, 0, 0);
-    set_tip(W.tip, g_main, W.sortBtn, tip_for(L"Reset Filters"));
+    set_tip(W.tip, g_main, W.sortBtn, tip_for(L"Reset"));
     set_tip(W.tip, g_main, W.defBtn, tip_for(L"Restore Defaults"));
     set_tip(W.tip, g_main, W.cbRegion, tip_for(L"Region Filter"));
     set_tip(W.tip, g_main, W.cbMaker, tip_for(L"Maker Filter"));
@@ -1523,6 +1584,10 @@ static void create_ui(void) {
     W.tbAudio = tb_button(g_main, ID_TBAUDIO, TI_AUDIO);
     W.tbCtl = tb_button(g_main, ID_TBCTL, TI_CONTROLS);
     W.tbCmb = tb_button(g_main, ID_TBCMB, TI_COMBOS);
+    tb_set_label(W.tbRefresh, L"Refresh"); tb_set_label(W.tbFav, L"Favorites"); tb_set_label(W.tbAvail, L"Available");
+    tb_set_label(W.playBtn, L"Play"); tb_set_label(W.stopBtn, L"Stop"); tb_set_label(W.tbFs, L"Fullscreen");
+    tb_set_label(W.tbSet, L"Settings"); tb_set_label(W.tbVideo, L"Video"); tb_set_label(W.tbAudio, L"Audio"); tb_set_label(W.tbCtl, L"Controls"); tb_set_label(W.tbCmb, L"Combos");
+    tb_labels(g_set.toolbarLabels);
     set_tip(W.tip, g_main, W.tbRefresh, L"Refresh (F5)");
     set_tip(W.tip, g_main, W.tbFav, L"Favorites Only");
     set_tip(W.tip, g_main, W.tbAvail, L"List Only Available ROMs");
@@ -1585,8 +1650,6 @@ static HMENU build_menu(void) {
     AppendMenuW(help, MF_STRING, ID_M_ABOUT, L"&About");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)file, L"&File");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)game, L"&Game");
-    g_optsMenu = set;
-    AppendMenuW(bar, MF_POPUP, (UINT_PTR)set, L"&Options");
     {   /* View: theme, what the game list shows */
         HMENU view = CreatePopupMenu(), theme = CreatePopupMenu();
         AppendMenuW(theme, MF_STRING, ID_M_THEME0, L"&System");
@@ -1597,24 +1660,35 @@ static HMENU build_menu(void) {
         AppendMenuW(view, MF_STRING, ID_M_FAVONLY, L"&Favorites Only");
         AppendMenuW(view, MF_STRING, ID_M_AVAIL, L"List Only &Available ROMs");
         AppendMenuW(view, MF_SEPARATOR, 0, NULL);
+        {   /* the bars of the window */
+            HMENU tbs = CreatePopupMenu();
+            AppendMenuW(tbs, MF_STRING, ID_M_SHOWTOOLBAR, L"Show &Toolbar");
+            AppendMenuW(tbs, MF_STRING, ID_M_TBLABELS, L"Show Toolbar &Labels");
+            AppendMenuW(tbs, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(tbs, MF_STRING, ID_M_SHOWSEARCH, L"Show &Search Bar");
+            AppendMenuW(tbs, MF_STRING, ID_M_SHOWFILTERS, L"Show &Filter Bar");
+            AppendMenuW(tbs, MF_STRING, ID_M_SHOWSTATUS, L"Show S&tatus Bar");
+            AppendMenuW(view, MF_POPUP, (UINT_PTR)tbs, L"Tool&bars");
+            g_toolbarsMenu = tbs;
+        }
         {   /* the columns of the game list */
             HMENU cols = CreatePopupMenu();
             static const wchar_t *const cn[NCOLS] = {L"&Favorite", L"&#", L"&Game", L"&Info", L"&Status", L"&Hardware", L"&Year"};
             int k;
             for (k = 0; k < NCOLS; k++) AppendMenuW(cols, MF_STRING | (kColOrder[k] == 2 ? MF_GRAYED : 0), ID_COL0 + kColOrder[k], cn[kColOrder[k]]);
+            AppendMenuW(cols, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(cols, MF_STRING, ID_M_SIZECOLS, L"&Size All Columns to Fit");
             AppendMenuW(view, MF_POPUP, (UINT_PTR)cols, L"List &Columns");
             g_colsMenu = cols;
         }
-        AppendMenuW(view, MF_SEPARATOR, 0, NULL);
-        AppendMenuW(view, MF_STRING, ID_M_SHOWTOOLBAR, L"Show Tool&bar");
-        AppendMenuW(view, MF_STRING, ID_M_SHOWSEARCH, L"Show &Search Bar");
-        AppendMenuW(view, MF_STRING, ID_M_SHOWFILTERS, L"Show Filter Ba&r");
         AppendMenuW(view, MF_SEPARATOR, 0, NULL);
         AppendMenuW(view, MF_STRING, ID_M_LAY0, L"Classic &Layout");   /* checked: the settings are in the main window; unchecked: in a window of their own */
         AppendMenuW(view, MF_STRING, ID_M_RESETWIN, L"&Reset Window Size");
         g_viewMenu = view; g_themeMenu = theme;
         AppendMenuW(bar, MF_POPUP, (UINT_PTR)view, L"&View");
     }
+    g_optsMenu = set;
+    AppendMenuW(bar, MF_POPUP, (UINT_PTR)set, L"&Options");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)help, L"&Help");
     return bar;
 }
@@ -1695,6 +1769,12 @@ static void on_command(int id, int code, HWND src) {
         return;
     case ID_M_SHOWSEARCH: g_set.hideSearch = SEARCH_SHOWN(); g_searchOv = -1; apply_bars(); do_layout(); settings_save(); return;   /* shown -> hidden, hidden -> shown (and remembered) */
     case ID_M_SHOWFILTERS: g_set.hideFilters = !g_set.hideFilters; apply_bars(); do_layout(); settings_save(); return;
+    case ID_M_SHOWSTATUS: g_set.hideStatus = !g_set.hideStatus; apply_bars(); do_layout(); settings_save(); RedrawWindow(g_main, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW); return;
+    case ID_M_TBLABELS:   /* View > Toolbars > Show Toolbar Labels */
+        g_set.toolbarLabels = !g_set.toolbarLabels; tb_labels(g_set.toolbarLabels); apply_bars(); do_layout(); settings_save();
+        RedrawWindow(g_main, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        return;
+    case ID_M_SIZECOLS: size_all_columns(); return;
     case ID_COL2: return;   /* the Game column always stays */
     case ID_COL0: case ID_COL1: case ID_COL3: case ID_COL4: case ID_COL5: case ID_COL6:   /* show / hide a column of the game list */
         g_set.colsHidden ^= 1 << (id - ID_COL0);
@@ -1789,6 +1869,7 @@ static void on_command(int id, int code, HWND src) {
         SendMessageW(W.cbRegion, CB_SETCURSEL, 0, 0); SendMessageW(W.cbMaker, CB_SETCURSEL, 0, 0); SendMessageW(W.cbGenre, CB_SETCURSEL, 0, 0);
         g_sortCol = 1; g_sortAsc = 1; refilter(); settings_save(); return;
     case ID_F_REGION: case ID_F_MAKER: case ID_F_GENRE: if (code == CBN_SELCHANGE) { refilter(); settings_save(); } return;
+    case ID_V_CRT: if (code == CBN_SELCHANGE) update_renderer(); return;
     case ID_V_RENDERER: if (code == CBN_SELCHANGE) update_renderer(); return;
     case ID_V_AUTO: if (code == BN_CLICKED) update_renderer(); return;
     case ID_S_ROMS: if (code == EN_KILLFOCUS) refilter(); return;
@@ -1915,7 +1996,8 @@ static LRESULT CALLBACK main_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             SetTimer(h, 3, 150, NULL);   /* and once more when the maximize / restore animation is over */
         }
         return 0;
-    case WM_DRAWITEM: if (tb_draw((const DRAWITEMSTRUCT *)l)) return TRUE; break;   /* the toolbar buttons */
+    case WM_DRAWITEM: if (tb_draw((const DRAWITEMSTRUCT *)l) || th_combo_item((const DRAWITEMSTRUCT *)l)) return TRUE; break;   /* the toolbar buttons and the combo boxes of the dark theme */
+    case WM_MEASUREITEM: if (th_combo_measure((MEASUREITEMSTRUCT *)l)) return TRUE; break;
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORBTN: case WM_CTLCOLORLISTBOX:   /* the controls on the window itself (search row, filters) */
         if (g_dark) return (LRESULT)th_ctlcolor(m, (HDC)w, (HWND)l, 0);
         break;
@@ -1928,6 +2010,7 @@ static LRESULT CALLBACK main_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mi = (MINMAXINFO *)l;
         { int minw = g_set.optWindow ? S(640) : S(1000);   /* without the tabs the main window can be narrower */
+          if (!g_set.optWindow && !g_set.hideToolbar && minw < toolbar_total_w() + S(560)) minw = toolbar_total_w() + S(560);   /* the toolbar and the tabs side by side */
           mi->ptMinTrackSize.x = minw > GetSystemMetrics(SM_CXSCREEN) ? GetSystemMetrics(SM_CXSCREEN) : minw; }
         mi->ptMinTrackSize.y = S(700) > GetSystemMetrics(SM_CYSCREEN) ? GetSystemMetrics(SM_CYSCREEN) : S(700);
         return 0;
@@ -1941,9 +2024,14 @@ static LRESULT CALLBACK main_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             CheckMenuRadioItem(g_themeMenu, ID_M_THEME0, ID_M_THEME2, ID_M_THEME0 + g_set.themeMode, MF_BYCOMMAND);
             CheckMenuItem(g_viewMenu, ID_M_FAVONLY, MF_BYCOMMAND | (ctl_checked(W.favOnly) ? MF_CHECKED : MF_UNCHECKED));
             CheckMenuItem(g_viewMenu, ID_M_AVAIL, MF_BYCOMMAND | (ctl_checked(W.chAvail) ? MF_CHECKED : MF_UNCHECKED));
-            CheckMenuItem(g_viewMenu, ID_M_SHOWSEARCH, MF_BYCOMMAND | (SEARCH_SHOWN() ? MF_CHECKED : MF_UNCHECKED));
-            CheckMenuItem(g_viewMenu, ID_M_SHOWTOOLBAR, MF_BYCOMMAND | (g_set.hideToolbar ? MF_UNCHECKED : MF_CHECKED));
-            CheckMenuItem(g_viewMenu, ID_M_SHOWFILTERS, MF_BYCOMMAND | (g_set.hideFilters ? MF_UNCHECKED : MF_CHECKED));
+        }
+        if (mn == g_toolbarsMenu || mn == g_viewMenu) {   /* the check marks of the Toolbars menu */
+            CheckMenuItem(g_toolbarsMenu, ID_M_SHOWSEARCH, MF_BYCOMMAND | (SEARCH_SHOWN() ? MF_CHECKED : MF_UNCHECKED));
+            CheckMenuItem(g_toolbarsMenu, ID_M_SHOWTOOLBAR, MF_BYCOMMAND | (g_set.hideToolbar ? MF_UNCHECKED : MF_CHECKED));
+            CheckMenuItem(g_toolbarsMenu, ID_M_TBLABELS, MF_BYCOMMAND | (g_set.toolbarLabels ? MF_CHECKED : MF_UNCHECKED));
+            EnableMenuItem(g_toolbarsMenu, ID_M_TBLABELS, MF_BYCOMMAND | (g_set.hideToolbar ? MF_GRAYED : MF_ENABLED));
+            CheckMenuItem(g_toolbarsMenu, ID_M_SHOWFILTERS, MF_BYCOMMAND | (g_set.hideFilters ? MF_UNCHECKED : MF_CHECKED));
+            CheckMenuItem(g_toolbarsMenu, ID_M_SHOWSTATUS, MF_BYCOMMAND | (g_set.hideStatus ? MF_UNCHECKED : MF_CHECKED));
         }
         if (mn == g_playWithMenu) {   /* the renderers, to try one once */
             int i;

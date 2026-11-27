@@ -40,6 +40,7 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 - Direct3D 11 only: **Internal resolution** (Auto by default, 1x – 4x) and **xBRZ filter**
   (off / all graphics / 2D objects only) – a real GPU port of the xBRZ pixel-art scaler.
   Also **Overscan Crop**, **Bezel Image** (a PNG frame with a transparent window; General tab), **Aspect Ratio** (stretch / 4:3 / 16:9 / pixel perfect), **Fullscreen Mode** (change the screen resolution, or a borderless window over the desktop), **V-Sync**, **3D Texture Smoothing** (bilinear smoothing of 3D textures; 2D sprites stay sharp; on by default), an **FXAA filter** and **Dither Smoothing** (reduces dither patterns baked into the game graphics).
+  A **CRT Look** with presets (Light: faint scanlines; Classic: scanlines and a phosphor mask; Curved: also a bulging screen and darker corners) and **Integer Scaling** (the picture height is a whole multiple of the console picture so the scanlines stay even).
 
 **Audio / General**
 - Sound on/off, sound filter and cut-off, surround lite, stereo exciter, rotation,
@@ -55,11 +56,11 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 - *Game > Game Settings*: a game can have its own renderer, rotation, window / fullscreen, resolution, Direct3D 11 scale and
   xBRZ, sound options, slow geometry, **controls profile** and trainer. What is left on *Same As Global* follows the main settings.
   The settings are kept in `zinc-games.cfg`; the game is started with its own copies of `renderer.cfg` / `zinc-input.cfg`
-  (folder `game-settings`). Desktop icons use them too.
+  (folder `game-settings`). Desktop icons use them too. When a game goes back to *Same As Global* for everything, its copies there are deleted (the copy a desktop icon uses stays, so the icon keeps working with the settings it was made with).
 - The right-click menu (and the Game menu) also has *Play Fullscreen*, *Play Windowed* and *Play With* (a renderer, once, to try it).
 - *Check ROM Set*: looks at the zip files of the game, its parent set and the BIOS and says which are missing or damaged
   (the zip directory and the checksum of every file are verified). It cannot see which file *inside* a set is missing.
-- Filters by **region**, **maker** and **genre** above the list (remembered for the next start; *Reset Filters* sets them and the list order back). The region (US, JP, ASIA, WORLD) is read from the words between ( ) in the game name, *Other* when none says it; maker and genre are guessed from the name and BIOS.
+- Filters by **region**, **maker** and **genre** above the list (remembered for the next start; *Reset* sets them and the list order back; the filter row starts with a "Filters:" label like the search row). The region (US, JP, ASIA, WORLD) is read from the words between ( ) in the game name, *Other* when none says it; maker and genre are guessed from the name and BIOS.
 - *Play With Trainer* (right-click menu and Game menu) starts the game together with the trainer program set on the General tab (by default `trainer\ZiNc 1.1 Trainer.exe`, next to the launcher), for example the ZiNc 1.1 Trainer. *Start Trainer With Games* (General tab) or *Game Settings > Start Trainer* start it with every / one game; it is closed when the game ends.
 
 **Controls and Mouse**
@@ -79,9 +80,9 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 
 **Settings Layout.** By default the tabs (General, Video, Audio, Controls, Combos) are in a window of their own, so the game list has the whole main window; open it with the Settings button of the toolbar, *Options > Settings…* or F9 (*Options* also has Video, Audio, Controls and Combos Settings, which open that tab). *Classic Layout* (a check box on the General tab, applied with OK; also in the View menu) puts the tabs on the right of the game list instead. The choice and the position of the settings window are remembered.
 
-**Game List Columns.** Right-click the title of the game list to show or hide its columns (Favorite, #, Info; Game always stays). Info is hidden by default. The choice is remembered; at least one column always stays.
+**Game List Columns.** Right-click the title of the game list to show or hide its columns (Favorite, #, Info; Game always stays). The same menu (and View > List Columns) has **Size All Columns to Fit**. Info is hidden by default. The choice is remembered; at least one column always stays.
 
-**View Menu.** *View > Theme* or the *Theme* box of the General tab (System, Light, Dark; applied at the next start, System follows the Windows app colour mode), *Favorites Only*, *List Only Available ROMs*, *Show Toolbar*, *Show Search Bar* and *Show Filter Bar* (the toolbar, the search row and the filter row), *List Columns* (#, Status, Favorite, Game, Hardware, Year, Info; Game always stays; Year and Info are hidden by default; Status shows a green tick when the ROM set is there and a red cross when it is missing, Hardware is the arcade board such as Sony ZN-1 System or Namco System 11), *Classic Layout* (checked: the settings are in the main window; unchecked: in a window of their own) and *Reset Window Size*. The theme moved here from the General tab.
+**View Menu.** *View > Theme* or the *Theme* box of the General tab (System, Light, Dark; applied at the next start, System follows the Windows app colour mode), *Favorites Only*, *List Only Available ROMs*, *Toolbars* (a submenu: *Show Toolbar*, *Show Toolbar Labels* (a caption under each toolbar icon; on by default), *Show Search Bar*, *Show Filter Bar* and *Show Status Bar*; the status bar is on by default), *List Columns* (#, Status, Favorite, Game, Hardware, Year, Info; Game always stays; Year and Info are hidden by default; Status shows a green tick when the ROM set is there and a red cross when it is missing, Hardware is the arcade board such as Sony ZN-1 System or Namco System 11), *Classic Layout* (checked: the settings are in the main window; unchecked: in a window of their own) and *Reset Window Size*. The theme moved here from the General tab.
 
 **Toolbar.** Under the menu bar: Refresh (F5), Favorites Only | Play, Stop, Fullscreen (a switch for the Fullscreen setting) | Settings (General tab), Video, Controls, Combos (the tab of the settings). The icons are drawn in the colour of the theme, so they fit the light and the dark theme. *Create Desktop Icon* is in the Game menu and in the right-click menu of a game.
 
@@ -89,7 +90,7 @@ The launcher creates its own files next to itself: `zinc-settings.cfg` (all laun
 
 **Per-Game Bezels.** Put a PNG named after the game set in a `bezels` folder next to ZiNc.exe (for example `bezels\sfex2.png`; a clone such as `sfex2j` also finds the bezel of its parent `sfex2`). With the Direct3D 11 renderer that game uses it instead of the bezel of the General tab. The *Browse* button of the Bezel Image starts in that folder. *Game > Game Settings* has a *Bezel (D3D11)* choice as well: Same As Global (the automatic file or the General tab bezel), None, or any PNG of the `bezels` folder for that one game.
 
-**Game Settings Tabs and Toolbar.** *Game > Game Settings* is split in tabs: General (renderer, rotation, window, resolution, bezel), Video (Direct3D 11: fullscreen mode, aspect ratio, internal resolution, xBRZ, 3D texture smoothing, FXAA, dither smoothing, V-Sync, overscan crop, slow geometry), Audio and Other (controls profile, trainer). The toolbar has a *List Only Available ROMs* switch next to the favorites star and an *Audio Settings* button next to Video.
+**Game Settings Tabs and Toolbar.** *Game > Game Settings* is split in tabs: General (renderer, rotation, window, resolution, bezel), Video (Direct3D 11: fullscreen mode, aspect ratio, integer scaling, internal resolution, xBRZ, 3D texture smoothing, FXAA, dither smoothing, CRT look, V-Sync, overscan crop, slow geometry), Audio and Other (controls profile, trainer). The toolbar has a *List Only Available ROMs* switch next to the favorites star and an *Audio Settings* button next to Video.
 
 **Safer Lists and Bindings.** The columns of the game list, the key bindings list and the combos list cannot be dragged narrower than 64 pixels (32 for the Favorite, #, Status and Year columns), so they never vanish. A keyboard key can belong to one action only; a pad button can belong to one action of a player (Player 1, Coin 1, Test and Service use the first controller, Player 2 and Coin 2 the second). Binding one that is taken asks whether to move it: *Yes* takes it from the other action (which is left unbound), *No* keeps the old binding. The sound filter and fullscreen are on by default.
 
@@ -106,6 +107,7 @@ ZiNc-EX.exe --game <set name or ROM file> [--fullscreen | --windowed]
 - It starts the game with your global settings **and the game's own settings** (Game Settings, controls profile, bezel...),
   without showing the launcher window, **waits until the game is closed** and then exits, so the frontend knows when to come back.
 - `--fullscreen` / `--windowed` change the window mode for this start only (nothing is written to your settings).
+- `ZiNc-EX.exe --play <number> [--fullscreen]` (the number of the game in the list) still works for the desktop icons of older builds.
 - Exit code: `0` played, `2` unknown game, `3` ROM files missing, `4` ZiNc.exe could not be started, `5` no game given.
   The reason is written to `ZiNc-EX_launch.log` beside the program.
 - Arcade clones need their own zip like in ZiNc (the parent and BIOS zips must be in the ROMs folder as well).

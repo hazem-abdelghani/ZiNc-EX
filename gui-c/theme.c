@@ -32,6 +32,9 @@ typedef void (WINAPI *FlushMenuThemes_t)(void);
 typedef HRESULT (WINAPI *DwmSetWindowAttribute_t)(HWND, DWORD, LPCVOID, DWORD);
 static AllowDarkModeForWindow_t pAllowWin;
 
+COLORREF th_menubar_bg(void) { return g_dark ? RGB(0x27, 0x27, 0x27) : th_face(); }   /* the menu bar: #272727 in the dark theme */
+COLORREF th_toolbar_bg(void) { return th_face(); }                                      /* the toolbar keeps the window colour */
+
 void th_init(int dark) {
     HMODULE ux;
     g_dark = dark;
@@ -83,6 +86,46 @@ void th_control(HWND h, const wchar_t *cls) {
         ListView_SetTextBkColor(h, C_PAGE);
         ListView_SetTextColor(h, C_TEXT);
     }
+}
+
+/* the items of a combo box in the dark theme (the field and the drop-down list): the system highlight of a themed list is white, so they are drawn here */
+int th_combo_item(const DRAWITEMSTRUCT *di) {
+    wchar_t t[300];
+    RECT r;
+    HBRUSH b;
+    HGDIOBJ of;
+    int sel;
+    if (!g_dark || !di || di->CtlType != ODT_COMBOBOX) return 0;
+    r = di->rcItem;
+    sel = (di->itemState & ODS_SELECTED) && !(di->itemState & ODS_COMBOBOXEDIT);   /* the closed field is never highlighted */
+    b = CreateSolidBrush(sel ? C_ACCENT : C_FIELD);
+    FillRect(di->hDC, &r, b);
+    DeleteObject(b);
+    t[0] = 0;
+    if ((int)di->itemID >= 0 && SendMessageW(di->hwndItem, CB_GETLBTEXTLEN, di->itemID, 0) < 300) SendMessageW(di->hwndItem, CB_GETLBTEXT, di->itemID, (LPARAM)t);
+    if (t[0]) {
+        of = SelectObject(di->hDC, g_font);
+        SetBkMode(di->hDC, TRANSPARENT);
+        SetTextColor(di->hDC, (di->itemState & ODS_DISABLED) ? C_GRAY : sel ? RGB(255, 255, 255) : C_TEXT);
+        r.left += S(4); r.right -= S(2);
+        DrawTextW(di->hDC, t, -1, &r, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+        SelectObject(di->hDC, of);
+    }
+    return 1;
+}
+
+int th_combo_measure(MEASUREITEMSTRUCT *mi) {
+    HDC dc;
+    HGDIOBJ of;
+    TEXTMETRICW tm;
+    if (!g_dark || !mi || mi->CtlType != ODT_COMBOBOX) return 0;
+    dc = GetDC(NULL);
+    of = SelectObject(dc, g_font);
+    GetTextMetricsW(dc, &tm);
+    SelectObject(dc, of);
+    ReleaseDC(NULL, dc);
+    mi->itemHeight = (UINT)(tm.tmHeight + S(3));
+    return 1;
 }
 
 /* WM_CTLCOLOR* of a child: the brush, or NULL (light theme: the caller's own handling). onPage: the child sits on a tab page */
@@ -234,7 +277,7 @@ static HBRUSH b_bar, b_hot, b_sel;
 LRESULT th_menu_msg(HWND h, UINT m, WPARAM w, LPARAM l, int *handled) {
     *handled = 0;
     if (!g_dark) return 0;
-    if (!b_bar) { b_bar = CreateSolidBrush(C_FACE); b_hot = CreateSolidBrush(RGB(62, 62, 62)); b_sel = CreateSolidBrush(RGB(78, 78, 78)); }
+    if (!b_bar) { b_bar = CreateSolidBrush(th_menubar_bg()); b_hot = CreateSolidBrush(RGB(62, 62, 62)); b_sel = CreateSolidBrush(RGB(78, 78, 78)); }
     if (m == WM_UAHDRAWMENU) {
         UAHMENU *um = (UAHMENU *)l;
         MENUBARINFO mbi;
@@ -284,7 +327,7 @@ void th_menu_line(HWND h) {
     RECT rc, rw, line;
     HDC dc;
     if (!g_dark) return;
-    if (!b_bar) b_bar = CreateSolidBrush(C_FACE);
+    if (!b_bar) b_bar = CreateSolidBrush(th_menubar_bg());
     memset(&mbi, 0, sizeof mbi);
     mbi.cbSize = sizeof mbi;
     if (!GetMenuBarInfo(h, OBJID_MENU, 0, &mbi)) return;
